@@ -1,0 +1,42 @@
+{
+  "name": "hamoni",
+  "version": "1.0.0",
+  "description": "Real-time Discord chat translation relay between KR/EN/JP/CN channels. LLM-powered, latency-optimized, MMORPG-tuned.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/parkbrother86/hamoni.git"
+  },
+  "keywords": [
+    "discord",
+    "discord-bot",
+    "translation",
+    "real-time",
+    "mmorpg",
+    "multilingual",
+    "korean",
+    "english",
+    "japanese",
+    "chinese",
+    "deepseek",
+    "llm",
+    "webhook-relay"
+  ],
+  "author": "parkbrother86",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/parkbrother86/hamoni/issues"
+  },
+  "homepage": "https://github.com/parkbrother86/hamoni#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "discord.js": "^14.17.0",
+    "dotenv": "^16.4.7",
+    "openai": "^4.77.0"
+  }
+}

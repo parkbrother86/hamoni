@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Runtime data
+data/
+*.log
+logs/
+
+# Editor / OS / AI tools
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude/
+
+# pm2
+.pm2/
+ecosystem.config.local.js
+
+# Project-local
+*.local.json
