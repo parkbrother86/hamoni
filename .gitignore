@@ -24,3 +24,7 @@ ecosystem.config.local.js
 
 # Project-local
 *.local.json
+
+# Markdown — only README.md is tracked
+*.md
+!README.md
