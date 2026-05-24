@@ -4,39 +4,15 @@ const { LANG_LABEL, LANG_NATIVE, LANG_RULE } = require('./config');
 const { normalizeTranslatedText } = require('./text');
 const stats = require('./stats');
 const metrics = require('./metrics');
+const cache = require('./cache');
 
 const deepseek = new OpenAI({
   baseURL: 'https://api.deepseek.com',
   apiKey: process.env.DEEPSEEK_API_KEY,
 });
 
-const CACHE_MAX = 500;
-const CACHE_TTL_MS = 60 * 60 * 1000;
-const cache = new Map();
-
-function cacheGet(key) {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.t > CACHE_TTL_MS) {
-    cache.delete(key);
-    return null;
-  }
-  cache.delete(key);
-  cache.set(key, entry);
-  return entry.v;
-}
-
-function cacheSet(key, value) {
-  if (cache.size >= CACHE_MAX) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
-  }
-  cache.set(key, { v: value, t: Date.now() });
-}
-
 async function translateText(text, sourceLang, targetLang) {
-  const cacheKey = `${sourceLang}|${targetLang}|${text}`;
-  const cached = cacheGet(cacheKey);
+  const cached = cache.get(text, sourceLang, targetLang);
   if (cached !== null) {
     stats.increment('cacheHits');
     metrics.record({
@@ -121,7 +97,7 @@ ${text}
   const result = normalizeTranslatedText(
     response.choices[0].message.content
   );
-  cacheSet(cacheKey, result);
+  cache.set(text, sourceLang, targetLang, result);
   return result;
 }
 
