@@ -1,5 +1,7 @@
 # Hamoni
 
+![Hamoni in action](sample.png)
+
 Real-time Discord chat translation relay between Korean / English / Japanese / Chinese channels. LLM-powered, latency-optimized, MMORPG-tuned.
 
 ---
