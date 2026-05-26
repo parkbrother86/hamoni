@@ -20,6 +20,7 @@ const {
   removeRelays,
 } = require('./store');
 const stats = require('./stats');
+const corpusLog = require('./corpus_log');
 
 const MAX_INFLIGHT_PER_USER = 5;
 const userInFlight = new Map();
@@ -214,6 +215,8 @@ async function relayToTarget({
   console.log(
     `Translated ${sourceLang} -> ${targetLang}: ${translated || '(attachment only)'}`
   );
+
+  return translated;
 }
 
 async function handleMessage(message) {
@@ -253,6 +256,7 @@ async function handleMessage(message) {
         `[${sourceLang}] ${displayName}: ${rendered || '(attachment)'}`
       );
 
+      const translations = {};
       await Promise.all(
         Object.entries(CHANNELS)
           .filter(([targetLang]) => targetLang !== sourceLang)
@@ -269,15 +273,30 @@ async function handleMessage(message) {
               hasContent,
               attachmentUrls,
               jumpLink,
-            }).catch((err) => {
-              stats.increment('errors');
-              console.error(
-                `Failed ${sourceLang} -> ${targetLang} channel=${targetChannelId}`,
-                err?.message || err
-              );
             })
+              .then((translated) => {
+                if (translated) translations[targetLang] = translated;
+              })
+              .catch((err) => {
+                stats.increment('errors');
+                console.error(
+                  `Failed ${sourceLang} -> ${targetLang} channel=${targetChannelId}`,
+                  err?.message || err
+                );
+              })
           )
       );
+
+      // Persist the full parallel translation set for offline analysis.
+      // No-op if there was no textual content (attachment-only messages).
+      if (hasContent && Object.keys(translations).length > 0) {
+        corpusLog.record({
+          sourceChannelId: message.channelId,
+          sourceLang,
+          sourceText: message.content,
+          translations,
+        });
+      }
     } finally {
       const remaining = (userInFlight.get(userId) || 1) - 1;
       if (remaining <= 0) userInFlight.delete(userId);
