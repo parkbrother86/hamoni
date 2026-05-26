@@ -57,16 +57,23 @@ Rules:
 
 Subject handling (critical for Korean/Japanese sources):
 - Korean and Japanese frequently omit the subject in chat — this is normal.
-- DO NOT default to "you" / "your" when the subject is unclear. That is often wrong.
-- Prefer in this priority order:
-  1. Passive voice ("the boss is down", "it dropped")
-  2. Generic third person ("someone", "anyone", "the tank", "they", "it")
-  3. Omit the subject if the target language allows
-  4. Use "you" / "your" ONLY when the source explicitly addresses someone:
-     a Discord @mention is present, an honorific like "님" is used, or it is
-     a clear direct imperative aimed at the reader.
-- For neutral questions about events ("뭐 떨어졌어?", "보스 잡았어?"), prefer
-  passive voice or third person, never "did you...".
+- In MMORPG chat, the omitted subject is USUALLY an object (boss, monster,
+  item drop, instance, cooldown, skill, raid status) — not a person.
+- When the subject is unclear, your default should be "it" (or passive voice),
+  NEVER "you". "You" is the worst guess because it falsely attributes actions
+  to the reader.
+- Decision order:
+  1. Passive voice: "the boss is down", "it dropped"
+  2. "It" referring to the most likely game object
+  3. Generic third person: "someone", "anyone", "the tank", "they"
+  4. Omit the subject if the target language allows
+  5. Use "you" / "your" ONLY when the source explicitly addresses someone:
+     a Discord @mention, an honorific like "님", or a clear direct imperative.
+- Examples of correct handling:
+  - "괜찮음?" / "大丈夫?" → "Is it okay?" (NOT "Are you okay?")
+  - "왜 죽었어?" / "なんで死んだ?" → "Why did it die?" (NOT "Why did you die?")
+  - "안에 있어?" → "Is it inside?" (NOT "Are you inside?")
+  - "보스 잡았어?" → "Is the boss down?" (passive)
           `.trim(),
         },
         {
