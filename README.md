@@ -9,12 +9,16 @@ Real-time Discord chat translation relay between Korean / English / Japanese / C
 ## Features
 
 - Automatic translation and relay across 4 language channels (KR / EN / JP / CN)
-- Parallel API calls + LRU cache for low latency
+- **Two-layer translation cache** — in-memory LRU (100K entries, instant) + persistent SQLite (30-day TTL, survives restarts). Most repeated phrases return in 0 ms with no API cost
+- **Subject-aware translation rules** — Korean/Japanese omit subjects in chat; the prompt detects honorific endings, self-reflection markers, and game-context signals to avoid the classic "you" misattribution
+- Parallel API fan-out (3 target languages per message, all in flight at once)
 - Message edit / delete sync, reply context preservation, attachment forwarding
 - Mention, custom emoji, and Discord markdown preservation
-- Per-user rate limiting
+- Per-user rate limiting (max 5 in-flight messages per user)
 - `/stats` slash command (p50 / p95 / p99 latency, cache hit rate, per-pair breakdown)
 - Persistent metrics log (JSONL, daily rotation)
+- **Multilingual parallel corpus log** — every translated message is stored as a 4-way parallel row in SQLite for offline analysis / future fine-tuning
+- **Real-time tail viewer** (`watch_corpus.js`) — live stream of incoming translations, runnable as a PM2 daemon you can attach to and detach from at will
 
 ---
 
@@ -84,6 +88,14 @@ cd hamoni
 npm install
 ```
 
+`npm install` will also compile / download a prebuilt `better-sqlite3` binary for the persistent cache layer. If the prebuild step fails on an unusual platform, install the toolchain and retry:
+
+```bash
+sudo apt install -y python3 make g++ build-essential
+rm -rf node_modules/better-sqlite3
+npm install better-sqlite3
+```
+
 ## 2.4 Configure environment variables
 
 Create `.env`:
@@ -138,7 +150,28 @@ pm2 logs hamoni
 # Slash commands registered on guild ...: /stats
 ```
 
-## 2.7 Auto-start on boot
+## 2.7 Optional: enable the live translation viewer
+
+The watcher is a separate, read-only process that prints every newly translated message in real time. You can attach to and detach from it freely while it keeps running.
+
+```bash
+# Register as a daemon (skip the initial backfill — pm2 logs handles that)
+pm2 start watch_corpus.js --name hamoni-watcher -- --backfill 0
+
+# Save so it auto-starts on reboot
+pm2 save
+
+# Whenever you want to see the live stream:
+pm2 logs hamoni-watcher --lines 30
+# Ctrl+C in pm2 logs → detach (watcher keeps running)
+
+# To actually stop the viewer:
+pm2 stop hamoni-watcher
+```
+
+See section 3.7 for details and filtering options.
+
+## 2.8 Auto-start on boot
 
 ```bash
 pm2 save
@@ -178,9 +211,11 @@ The `[⤴]` at the end of each message is a clickable jump link back to the orig
 
 | Behavior | Description |
 |---|---|
-| **Translation cache** | Repeated phrases (`ㅋㅋ`, `GG`, `AFK`, etc.) return instantly without an API call |
+| **Two-layer cache** | Memory LRU (100K entries) + SQLite (30-day TTL). Repeated phrases (`ㅋㅋ`, `GG`, `AFK`, etc.) return instantly with no API call. Survives bot restarts |
+| **Key normalization** | `gg`, `gg `, ` gg ` all map to the same cache entry (trim + whitespace-collapse) |
 | **API skip** | Emoji-only / URL-only / number-only messages are relayed verbatim, no API call |
 | **Same-language detection** | If a Korean channel message is written in English, the EN channel gets it as-is (no API call) |
+| **Subject handling** | Korean/Japanese omit subjects; the prompt prefers sentence-fragment translations ("Okay?", "Boss down?") over guessing "you", while preserving honorific signals ("-시-", "ですか") and self-reflection ("-네요", "なぁ") |
 | **Mention preservation** | `<@userId>` is rendered as `@displayname` (no ping); clicking it opens the real user profile |
 | **Custom emoji** | `<:emoji:id>` renders correctly across all 4 channels (same guild only) |
 | **Markdown** | `**bold**`, `||spoiler||`, ```` ```code blocks``` ```` etc. are preserved verbatim |
@@ -190,6 +225,7 @@ The `[⤴]` at the end of each message is a clickable jump link back to the orig
 | **Delete sync** | When the source is deleted, all relayed copies are deleted too |
 | **Replies** | When you use Discord's reply feature, target channels get a `> quoted snippet` prefix for context |
 | **Rate limit** | If a single user has 5+ messages in flight, additional messages are dropped to prevent flooding |
+| **Parallel corpus log** | Every translated message is stored as a 4-way parallel row (KR / EN / JP / CN) in SQLite for later analysis — see 3.8 |
 
 ## 3.3 Slash commands
 
@@ -220,20 +256,24 @@ Per-pair p95 (24h, slowest first)
 ```
 
 - `p50 / p95 / p99`: latency percentiles. p95 = 1.5s means "95% of responses arrive within 1.5 seconds"
-- `hit rate`: cache hit ratio. Higher = faster overall
+- `hit rate`: cache hit ratio. Higher = faster overall. Expect this to climb over the first few hours/days as the cache warms up, then plateau in the 70–95% range depending on chat repetition
 - `errors`: failed API calls
 - If the slash command doesn't show up: wait 1 minute after a bot restart, and verify the bot has `Use Application Commands` permission
 
 ## 3.4 Data layout
 
-The bot writes daily metrics logs to the `data/` directory:
+The bot writes several files under `data/`:
 
 ```
 data/
-├── metrics-2026-05-23.jsonl
+├── metrics-2026-05-23.jsonl          (per-call event log, daily rotation)
 ├── metrics-2026-05-24.jsonl
-└── ...
+├── translation_cache.db              (SQLite: cache L2 + corpus log)
+├── translation_cache.db-shm          (SQLite WAL shared memory)
+└── translation_cache.db-wal          (SQLite write-ahead log)
 ```
+
+### `metrics-YYYY-MM-DD.jsonl`
 
 Each line is one API call or cache hit event:
 
@@ -256,6 +296,15 @@ cat data/*.jsonl | jq -c 'select(.src=="kr" and .tgt=="jp")'
 cat data/*.jsonl | jq -c 'select(.err==1)'
 ```
 
+### `translation_cache.db`
+
+A single SQLite database holding two tables:
+
+- `cache` — key/value pairs `(sourceLang|targetLang|normalizedText) → translation`, with TTL (30 days). Backs the L2 cache layer.
+- `translation_log` — see 3.8.
+
+The DB uses WAL mode, so the bot can write while the watcher and any ad-hoc analysis query read concurrently.
+
 ## 3.5 Troubleshooting
 
 | Symptom | Cause / fix |
@@ -263,17 +312,129 @@ cat data/*.jsonl | jq -c 'select(.err==1)'
 | Bot doesn't receive messages | Verify **MESSAGE CONTENT INTENT** is enabled in the Developer Portal |
 | Slash commands don't appear | Verify the bot has `Use Application Commands` permission; wait 1–2 minutes after restart |
 | Translation never arrives | Check `pm2 logs hamoni` for errors. Verify `DEEPSEEK_API_KEY` and the `Manage Webhooks` permission |
+| `Cannot find module 'better-sqlite3'` | Run `npm install` in the bot directory. Native module — must be built on the same OS / arch where the bot runs |
 | Emojis / mentions are mangled | Custom emojis only render inside the same guild. Cross-guild emojis fall back to text |
 | Edit sync doesn't work for old messages | Messages sent before the bot started aren't in the in-memory store. This is expected |
-| Metrics seem to reset after pm2 restart | The persistent data lives in `data/*.jsonl`. Only the "current session" block in `/stats` resets |
+| Metrics seem to reset after pm2 restart | The persistent data lives in `data/*.jsonl` and `data/translation_cache.db`. Only the "current session" block in `/stats` resets |
+| Cache seems to retain old / wrong translations | Stop the bot, delete `data/translation_cache.db*` (three files: `.db`, `.db-shm`, `.db-wal`), restart. The cache will rebuild as messages come in |
 
 ## 3.6 Using it for non-MMORPG chat
 
-The translator system prompt in [`translator.js`](translator.js) is tuned for MMORPG chat (preserves gaming slang like GG / AFK / DPS, uses a casual tone). To adapt for another domain:
+The translator system prompt in [`translator.js`](translator.js) is tuned for MMORPG chat (preserves gaming slang like GG / AFK / DPS, uses a casual tone, prefers sentence fragments for ambiguous subjects). To adapt for another domain:
 
 - Edit the `system` message inside `translateText`
 - Adjust `MAX_MESSAGE_LENGTH` in [`config.js`](config.js) if you expect longer messages
 - To add a new language, add new entries to `CHANNELS`, `LANG_LABEL`, `LANG_NATIVE`, `LANG_RULE`, and `SOURCE_LANG_FLAG`
+- The corpus log table has hard-coded `kr / en / jp / cn` columns in [`corpus_log.js`](corpus_log.js) — extend the schema if you add languages
+
+## 3.7 Real-time translation viewer
+
+`watch_corpus.js` tails the `translation_log` table and prints each new row as it arrives. The DB is opened read-only, so it's safe to run alongside the live bot.
+
+### Two ways to use it
+
+**Ad-hoc** — run from a shell, see history + live stream, Ctrl+C to stop:
+
+```bash
+node watch_corpus.js              # last 100 + live
+node watch_corpus.js 50           # last 50 + live
+node watch_corpus.js --src kr     # filter to Korean source messages
+node watch_corpus.js --interval 500   # poll every 500 ms instead of 1000
+```
+
+**Daemon** — keep it running 24/7 under pm2, attach/detach with `pm2 logs`:
+
+```bash
+# One-time setup
+pm2 start watch_corpus.js --name hamoni-watcher -- --backfill 0
+pm2 save
+
+# Anytime you want to watch the live stream
+pm2 logs hamoni-watcher --lines 30
+
+# Ctrl+C in pm2 logs detaches the viewer — the watcher daemon keeps running
+# Reattach with the same pm2 logs command whenever you like
+```
+
+### Output format
+
+```
+[05-25 14:32:11] #1247  [KR] 보스 잡았어?
+                          → [EN] Boss down?
+                          → [JP] ボス倒した?
+                          → [CN] BOSS下了吗?
+
+[05-25 14:33:02] #1248  [JP] 待ってます
+                          → [KR] 기다리고 있어요
+                          → [EN] I'm waiting
+                          → [CN] 我在等
+```
+
+## 3.8 Translation corpus log
+
+Every message that goes through the relay is also written to a `translation_log` SQLite table — one row per source message, with all four language versions side by side. This builds up a 4-way parallel corpus over time, useful for:
+
+- Frequency analysis (which phrases recur most often)
+- Channel activity / time-of-day patterns
+- Quality auditing in production (e.g. "find EN translations that used 'you' even though the source had no person signal")
+- Fine-tuning data export (KR-EN-JP-CN parallel sentences)
+
+### Schema
+
+```sql
+CREATE TABLE translation_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,              -- ms epoch
+  source_channel_id TEXT,           -- which channel posted it (no user_id stored)
+  source_lang TEXT NOT NULL,        -- kr / en / jp / cn
+  source_text TEXT NOT NULL,        -- original message
+  kr TEXT, en TEXT, jp TEXT, cn TEXT
+);
+```
+
+Each row has all four columns filled — the source-language column holds the original, the others hold the translation. Only `source_channel_id` is recorded; `user_id` is intentionally **not** stored.
+
+### Example queries
+
+```bash
+sqlite3 data/translation_cache.db
+```
+
+```sql
+-- Total rows so far
+SELECT COUNT(*) FROM translation_log;
+
+-- Top 30 most-repeated phrases
+SELECT source_text, source_lang, COUNT(*) AS n
+FROM translation_log
+GROUP BY source_text, source_lang
+ORDER BY n DESC LIMIT 30;
+
+-- Export 4-way parallel CSV (for fine-tuning datasets etc.)
+.headers on
+.mode csv
+.output corpus_4way.csv
+SELECT source_text, kr, en, jp, cn
+FROM translation_log
+WHERE kr IS NOT NULL AND en IS NOT NULL
+  AND jp IS NOT NULL AND cn IS NOT NULL;
+
+-- Audit: KR/JP sources whose EN translation still uses "you"
+SELECT source_lang, source_text, en
+FROM translation_log
+WHERE source_lang IN ('kr','jp') AND en LIKE '%you%'
+ORDER BY ts DESC LIMIT 50;
+```
+
+### Disk usage
+
+Typical row is ~200 bytes. Even at 10,000 messages/day, that's ~700 MB/year — fine for a single VM. No TTL; manage manually if you ever need to:
+
+```sql
+-- Trim to last 12 months
+DELETE FROM translation_log WHERE ts < strftime('%s', 'now', '-1 year') * 1000;
+VACUUM;
+```
 
 ---
 
@@ -283,13 +444,33 @@ The translator system prompt in [`translator.js`](translator.js) is tuned for MM
 index.js          Entry point (Discord client, event wiring)
 config.js         Channel IDs, language constants
 text.js           Sanitize, normalize, mention/emoji preprocessing
-translator.js     DeepSeek API + LRU cache
+translator.js     DeepSeek API call + cache check
+cache.js          Two-layer translation cache (in-memory LRU + SQLite L2)
+corpus_log.js    4-way parallel corpus logger (translation_log table)
+watch_corpus.js   Real-time tail viewer (read-only, runs alongside the bot)
 webhook.js        Webhook lookup/create with caching
 store.js          In-memory relay ID mapping (for edit/delete sync)
-relay.js          Message handler orchestration
+relay.js          Message handler orchestration (fan-out, collect, log)
 stats.js          In-memory session counters
 metrics.js        Persistent JSONL metrics log
 commands.js       /stats slash command
+```
+
+### Hot path summary
+
+```
+Discord Gateway event
+  → relay.handleMessage
+    → per-user in-flight throttle (max 5)
+    → renderMentions / detectScript / isTranslatable
+    → Promise.all over 3 target languages:
+        → buildTranslatedBody
+          → cache.get  (L1 mem → L2 SQLite)
+          → on miss: translator.translateText → DeepSeek API
+          → cache.set (write-through to L1 + L2)
+        → webhook.send (with original avatar/name)
+        → store.recordRelay (for later edit/delete sync)
+    → corpus_log.record (4-way parallel row for offline analysis)
 ```
 
 ## License
