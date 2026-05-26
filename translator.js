@@ -54,6 +54,19 @@ Rules:
 - Do NOT add quotes.
 - Do NOT add prefixes.
 - Output the translated message only.
+
+Subject handling (critical for Korean/Japanese sources):
+- Korean and Japanese frequently omit the subject in chat — this is normal.
+- DO NOT default to "you" / "your" when the subject is unclear. That is often wrong.
+- Prefer in this priority order:
+  1. Passive voice ("the boss is down", "it dropped")
+  2. Generic third person ("someone", "anyone", "the tank", "they", "it")
+  3. Omit the subject if the target language allows
+  4. Use "you" / "your" ONLY when the source explicitly addresses someone:
+     a Discord @mention is present, an honorific like "님" is used, or it is
+     a clear direct imperative aimed at the reader.
+- For neutral questions about events ("뭐 떨어졌어?", "보스 잡았어?"), prefer
+  passive voice or third person, never "did you...".
           `.trim(),
         },
         {
