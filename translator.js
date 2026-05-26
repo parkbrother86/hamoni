@@ -55,25 +55,41 @@ Rules:
 - Do NOT add prefixes.
 - Output the translated message only.
 
-Subject handling (critical for Korean/Japanese sources):
-- Korean and Japanese frequently omit the subject in chat — this is normal.
-- In MMORPG chat, the omitted subject is USUALLY an object (boss, monster,
-  item drop, instance, cooldown, skill, raid status) — not a person.
-- When the subject is unclear, your default should be "it" (or passive voice),
-  NEVER "you". "You" is the worst guess because it falsely attributes actions
-  to the reader.
-- Decision order:
-  1. Passive voice: "the boss is down", "it dropped"
-  2. "It" referring to the most likely game object
-  3. Generic third person: "someone", "anyone", "the tank", "they"
-  4. Omit the subject if the target language allows
-  5. Use "you" / "your" ONLY when the source explicitly addresses someone:
-     a Discord @mention, an honorific like "님", or a clear direct imperative.
-- Examples of correct handling:
-  - "괜찮음?" / "大丈夫?" → "Is it okay?" (NOT "Are you okay?")
-  - "왜 죽었어?" / "なんで死んだ?" → "Why did it die?" (NOT "Why did you die?")
-  - "안에 있어?" → "Is it inside?" (NOT "Are you inside?")
-  - "보스 잡았어?" → "Is the boss down?" (passive)
+Subject handling (Korean/Japanese omit the subject):
+
+RULE A — Game/combat context defaults to "it" or passive:
+If the message references a game object, monster, item, status, or uses combat
+verbs (보스, 몬스터, 던전, 템, 리젠, 클리어, 잡다, 죽다, 깨다, 살아있다, 안에/밖에 있다,
+ボス, リポップ, クリア), use "it" / passive — NEVER "you" unless @mention or "님".
+- "보스 잡았어?" → "Is the boss down?"
+- "괜찮음?" → "Is it okay?"
+- "살아있어?" → "Is it alive?"
+- "안에 있어?" → "Is it inside?"
+- "깼어?" → "Is it cleared?"
+- "왜 죽었어?" → "Why did it die?"
+
+RULE B — When no game context, look for explicit signals:
+
+  B1) HONORIFIC verb endings → use "you" (2nd person):
+      "-시-", "-셨-", "-세요", "-십니다", "-하시면", "계신가요", "하신거죠",
+      Japanese "さん/様" or です/ます as direct address.
+      - "즐기셨겠네요" → "You must have enjoyed"
+      - "한국인 아니신가" → "Aren't you Korean?"
+      - "기억하시는지" → "I wonder if you remember"
+      - "채팅하시면 될듯합니다" → "You can chat freely"
+
+  B2) SELF-reflection endings → use "I" (1st person):
+      "-네요" with self-feeling, "-더라구요", "저/제가/내가" explicit, or topical
+      self ("기억나요", "기다려봅니다", "좋아해요").
+      - "낚여버렸네요" → "I got tricked lol"
+      - "리마스터 계속 기다려봅니다" → "I keep waiting for the remaster"
+      - "진짜 어지러워요" → "It really makes me dizzy"
+
+  B3) Sensory/cognitive verbs ("봤어?", "들었어?", "알아?", "見た?", "知ってる?")
+      may use "you" — they usually address a person.
+
+  B4) Otherwise (no signal): prefer restructuring or neutral phrasing rather
+      than guessing "you". Avoid "you" without B1/B3 reason.
           `.trim(),
         },
         {
