@@ -57,39 +57,42 @@ Rules:
 
 Subject handling (Korean/Japanese omit the subject):
 
-RULE A — Game/combat context defaults to "it" or passive:
-If the message references a game object, monster, item, status, or uses combat
-verbs (보스, 몬스터, 던전, 템, 리젠, 클리어, 잡다, 죽다, 깨다, 살아있다, 안에/밖에 있다,
-ボス, リポップ, クリア), use "it" / passive — NEVER "you" unless @mention or "님".
-- "보스 잡았어?" → "Is the boss down?"
-- "괜찮음?" → "Is it okay?"
-- "살아있어?" → "Is it alive?"
-- "안에 있어?" → "Is it inside?"
-- "깼어?" → "Is it cleared?"
-- "왜 죽었어?" → "Why did it die?"
+The default mindset: if the source has NO subject and NO clear address signal,
+the translation should also be SHORT and SUBJECT-LESS — use a sentence fragment
+rather than inventing a subject. Game chat is naturally fragment-style.
 
-RULE B — When no game context, look for explicit signals:
+  - "괜찮음?" → "Okay?"
+  - "왔어?" → "Here?"
+  - "들어왔어?" → "Came in?"
+  - "안에 있어?" → "Inside?"
+  - "끝났어?" → "Done?" / "Over?"
+  - "리젠됨?" → "Respawned?"
+  - "도착했어?" → "Arrived?"
+  - "살아있어?" → "Alive?"
+  - "보스 잡았어?" → "Boss down?" (object indicated, fragment still fine)
+  - "왜 죽었어?" → "Why'd it die?" (game context — "it", not "you")
 
-  B1) HONORIFIC verb endings → use "you" (2nd person):
-      "-시-", "-셨-", "-세요", "-십니다", "-하시면", "계신가요", "하신거죠",
-      Japanese "さん/様" or です/ます as direct address.
-      - "즐기셨겠네요" → "You must have enjoyed"
-      - "한국인 아니신가" → "Aren't you Korean?"
-      - "기억하시는지" → "I wonder if you remember"
-      - "채팅하시면 될듯합니다" → "You can chat freely"
+OVERRIDE the fragment default ONLY when the source has a CLEAR signal:
 
-  B2) SELF-reflection endings → use "I" (1st person):
-      "-네요" with self-feeling, "-더라구요", "저/제가/내가" explicit, or topical
-      self ("기억나요", "기다려봅니다", "좋아해요").
-      - "낚여버렸네요" → "I got tricked lol"
-      - "리마스터 계속 기다려봅니다" → "I keep waiting for the remaster"
-      - "진짜 어지러워요" → "It really makes me dizzy"
+  1) HONORIFIC verb endings → translate as a FULL sentence with "you":
+     "-시-", "-셨-", "-세요", "-십니다", "-하시면", "계신가요", "하신거죠",
+     Japanese "さん/様" or "です/ます" used as direct address.
+     - "즐기셨겠네요" → "You must have enjoyed it"
+     - "한국인 아니신가" → "Aren't you Korean?"
+     - "채팅하시면 됩니다" → "You can chat freely"
+     - "기억하시는지" → "Do you remember?"
 
-  B3) Sensory/cognitive verbs ("봤어?", "들었어?", "알아?", "見た?", "知ってる?")
-      may use "you" — they usually address a person.
+  2) SELF-reflection endings → translate as a FULL sentence with "I":
+     "-네요" with self-feeling, "-더라구요", explicit "저/제가/내가/私/僕/俺",
+     topical self ("기억나요", "기다려봅니다", "좋아해요").
+     - "낚여버렸네요" → "I got tricked"
+     - "진짜 어지러워요" → "It really makes me dizzy"
+     - "기다려봅니다" → "I keep waiting"
 
-  B4) Otherwise (no signal): prefer restructuring or neutral phrasing rather
-      than guessing "you". Avoid "you" without B1/B3 reason.
+  3) Sensory/cognitive verbs ("봤어?", "들었어?", "알아?", "見た?", "知ってる?")
+     may use "you" — they typically address a person. Fragments also work.
+
+Otherwise: PREFER FRAGMENT over guessing.
           `.trim(),
         },
         {
