@@ -61,36 +61,53 @@ The default mindset: if the source has NO subject and NO clear address signal,
 the translation should also be SHORT and SUBJECT-LESS — use a sentence fragment
 rather than inventing a subject. Game chat is naturally fragment-style.
 
-  - "괜찮음?" → "Okay?"
-  - "왔어?" → "Here?"
-  - "들어왔어?" → "Came in?"
-  - "안에 있어?" → "Inside?"
-  - "끝났어?" → "Done?" / "Over?"
-  - "리젠됨?" → "Respawned?"
-  - "도착했어?" → "Arrived?"
-  - "살아있어?" → "Alive?"
-  - "보스 잡았어?" → "Boss down?" (object indicated, fragment still fine)
-  - "왜 죽었어?" → "Why'd it die?" (game context — "it", not "you")
+  - "괜찮음?" / "大丈夫?" → "Okay?"
+  - "왔어?" / "来た?" → "Here?"
+  - "들어왔어?" / "入った?" → "Came in?"
+  - "안에 있어?" / "中にいる?" → "Inside?"
+  - "끝났어?" / "終わった?" → "Done?" / "Over?"
+  - "리젠됨?" / "リポップした?" → "Respawned?"
+  - "도착했어?" / "着いた?" → "Arrived?"
+  - "살아있어?" / "生きてる?" → "Alive?"
+  - "보스 잡았어?" / "ボス倒した?" → "Boss down?"
+  - "왜 죽었어?" / "なんで死んだ?" → "Why'd it die?" (game context → "it")
 
 OVERRIDE the fragment default ONLY when the source has a CLEAR signal:
 
   1) HONORIFIC verb endings → translate as a FULL sentence with "you":
-     "-시-", "-셨-", "-세요", "-십니다", "-하시면", "계신가요", "하신거죠",
-     Japanese "さん/様" or "です/ます" used as direct address.
+
+     Korean:   "-시-", "-셨-", "-세요", "-십니다", "-하시면", "계신가요", "하신거죠"
+     Japanese: polite "ですか / ますか" used as direct question, "さん / 様"
+               honorifics, polite imperative "～てください / ～なさい"
+
      - "즐기셨겠네요" → "You must have enjoyed it"
      - "한국인 아니신가" → "Aren't you Korean?"
      - "채팅하시면 됩니다" → "You can chat freely"
      - "기억하시는지" → "Do you remember?"
+     - "覚えていますか?" → "Do you remember?"
+     - "プレイされてましたか?" → "Were you playing?"
+     - "知っていますか?" → "Do you know?"
+     - "やってみてください" → "Please try it"
+     - "日本人ですよね?" → "You're Japanese, right?"
 
   2) SELF-reflection endings → translate as a FULL sentence with "I":
-     "-네요" with self-feeling, "-더라구요", explicit "저/제가/내가/私/僕/俺",
-     topical self ("기억나요", "기다려봅니다", "좋아해요").
+
+     Korean:   explicit "저/제가/내가", "-네요" with self-feeling, "-더라구요",
+               topical self ("기억나요", "기다려봅니다", "좋아해요")
+     Japanese: explicit "私/僕/俺/うち", "なぁ / かな" musing, "んです / んですよ"
+               with personal feeling, "～たい" wanting
+
      - "낚여버렸네요" → "I got tricked"
      - "진짜 어지러워요" → "It really makes me dizzy"
-     - "기다려봅니다" → "I keep waiting"
+     - "리마스터 계속 기다려봅니다" → "I keep waiting for the remaster"
+     - "懐かしいなぁ" → "I feel nostalgic"
+     - "好きでした" → "I liked it"
+     - "待ってます" → "I'm waiting"
+     - "やりたいです" → "I want to do it"
+     - "嬉しいです" → "I'm happy"
 
-  3) Sensory/cognitive verbs ("봤어?", "들었어?", "알아?", "見た?", "知ってる?")
-     may use "you" — they typically address a person. Fragments also work.
+  3) Sensory/cognitive verbs ("봤어?", "들었어?", "알아?", "見た?", "知ってる?",
+     "聞いた?") may use "you" — they typically address a person.
 
 Otherwise: PREFER FRAGMENT over guessing.
           `.trim(),
