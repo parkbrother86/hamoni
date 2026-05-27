@@ -87,14 +87,15 @@ async function buildTranslatedBody({
 
   const { processed, tokens } = preprocessForTranslation(
     message.content,
-    message
+    message,
+    sourceLang
   );
   const translated = await translateText(
     processed,
     sourceLang,
     targetLang
   );
-  return postprocessTranslation(translated, tokens);
+  return postprocessTranslation(translated, tokens, targetLang);
 }
 
 function composeFinalContent({

@@ -115,7 +115,9 @@ function renderMentions(text, message) {
   return result;
 }
 
-function preprocessForTranslation(text, message) {
+const glossary = require('./glossary');
+
+function preprocessForTranslation(text, message, sourceLang) {
   const tokens = [];
   let result = text;
   let counter = 0;
@@ -157,13 +159,40 @@ function preprocessForTranslation(text, message) {
     return p;
   });
 
+  // Glossary substitution: known terms → placeholders. The LLM never sees the
+  // term itself; postprocessTranslation restores the canonical target form.
+  if (sourceLang) {
+    const matches = glossary.findMatches(result, sourceLang);
+    // Process from the end so earlier indices stay valid as we splice in
+    // placeholders of differing lengths.
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const m = matches[i];
+      const p = nextPlaceholder();
+      tokens.push({ placeholder: p, termId: m.termId });
+      result = result.slice(0, m.start) + p + result.slice(m.end);
+    }
+  }
+
   return { processed: result, tokens };
 }
 
-function postprocessTranslation(text, tokens) {
+function postprocessTranslation(text, tokens, targetLang) {
   let result = text;
-  for (const { placeholder, original } of tokens) {
-    result = result.split(placeholder).join(original);
+  for (const t of tokens) {
+    let replacement;
+    if (t.termId) {
+      // Glossary token — restore to target-language canonical form.
+      // Fallback to the placeholder itself if no canonical exists, so we
+      // never silently drop it.
+      replacement = glossary.getCanonical(t.termId, targetLang);
+      if (replacement === null || replacement === undefined) {
+        replacement = t.placeholder;
+      }
+    } else {
+      // Mention / emoji token — restore the original text verbatim.
+      replacement = t.original;
+    }
+    result = result.split(t.placeholder).join(replacement);
   }
   return result;
 }
