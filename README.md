@@ -11,6 +11,7 @@ Real-time Discord chat translation relay between Korean / English / Japanese / C
 - Automatic translation and relay across 4 language channels (KR / EN / JP / CN)
 - **Two-layer translation cache** — in-memory LRU (100K entries, instant) + persistent SQLite (30-day TTL, survives restarts). Most repeated phrases return in 0 ms with no API cost
 - **Subject-aware translation rules** — Korean/Japanese omit subjects in chat; the prompt detects honorific endings, self-reflection markers, and game-context signals to avoid the classic "you" misattribution
+- **Custom glossary** — game-specific proper nouns (game name, locations, classes, items) are replaced with opaque placeholders before the LLM call and restored to canonical target-language forms after. The LLM never sees the term itself, so it can never produce a wrong transliteration (`Erentia` / `Eransia` / etc.). System prompt grows zero as the glossary grows
 - Parallel API fan-out (3 target languages per message, all in flight at once)
 - Message edit / delete sync, reply context preservation, attachment forwarding
 - Mention, custom emoji, and Discord markdown preservation
@@ -216,6 +217,7 @@ The `[⤴]` at the end of each message is a clickable jump link back to the orig
 | **API skip** | Emoji-only / URL-only / number-only messages are relayed verbatim, no API call |
 | **Same-language detection** | If a Korean channel message is written in English, the EN channel gets it as-is (no API call) |
 | **Subject handling** | Korean/Japanese omit subjects; the prompt prefers sentence-fragment translations ("Okay?", "Boss down?") over guessing "you", while preserving honorific signals ("-시-", "ですか") and self-reflection ("-네요", "なぁ") |
+| **Glossary substitution** | Terms in `data/glossary.json` are replaced with opaque placeholders before the LLM call and restored to canonical target-language forms after. Guarantees `일랜시아 → Elancia / エランシア / 艾兰西亚` consistently, regardless of model — see 3.9 |
 | **Mention preservation** | `<@userId>` is rendered as `@displayname` (no ping); clicking it opens the real user profile |
 | **Custom emoji** | `<:emoji:id>` renders correctly across all 4 channels (same guild only) |
 | **Markdown** | `**bold**`, `||spoiler||`, ```` ```code blocks``` ```` etc. are preserved verbatim |
@@ -436,24 +438,101 @@ DELETE FROM translation_log WHERE ts < strftime('%s', 'now', '-1 year') * 1000;
 VACUUM;
 ```
 
+## 3.9 Custom glossary
+
+Game-specific proper nouns (the game's own name, characters, locations, classes, items) are often transliterated inconsistently by LLMs — the same Korean term might come out as `Elancia`, `Eransia`, `Erentia`, `R1`, etc.
+
+The glossary system solves this **without touching the system prompt**. Each term is replaced with an opaque placeholder before the LLM call and restored to the canonical target-language form after. The LLM never sees the term itself; it only round-trips the placeholder (which the system prompt already mandates for mentions and emojis).
+
+### How it works
+
+```
+Source (kr):   "일랜시아 좋아해요"
+   ↓ preprocessForTranslation(sourceLang='kr')
+Sent to LLM:   "⟪T0⟫ 좋아해요"       ← term hidden
+   ↓ LLM
+Response:      "I love ⟪T0⟫."
+   ↓ postprocessTranslation(targetLang='en')
+Final:         "I love Elancia."
+```
+
+Consequence:
+
+- **System prompt grows zero** regardless of how many terms you add — no attention dilution
+- **100% deterministic** — no model (DeepSeek, GPT, Claude, Gemini) can produce a wrong transliteration
+- Cache hit rate unaffected (same source → same placeholder sequence)
+
+### Configuring terms
+
+The file [`glossary.example.json`](glossary.example.json) ships with starter entries:
+
+```json
+[
+  {
+    "id": "elancia",
+    "forms": {
+      "kr": ["일랜시아"],
+      "en": ["Elancia"],
+      "jp": ["エランシア"],
+      "cn": ["艾兰西亚"]
+    }
+  },
+  {
+    "id": "elan",
+    "forms": {
+      "kr": ["일랜"],
+      "en": ["Elan"],
+      "jp": ["エラン"],
+      "cn": ["艾兰"]
+    }
+  }
+]
+```
+
+To customize, copy it to `data/glossary.json` (gitignored) and edit:
+
+```bash
+cp glossary.example.json data/glossary.json
+nano data/glossary.json
+# Save → fs.watch auto-reloads within ~200ms, no bot restart needed
+```
+
+If `data/glossary.json` does not exist, the bot falls back to `glossary.example.json` automatically.
+
+### Format details
+
+- `id` — internal identifier (any string, used only to link the term across languages)
+- `forms[lang]` — array of forms in that language
+  - **First element is the canonical form** — used when restoring
+  - Subsequent elements are aliases also matched in source text (e.g. spelling variants)
+- Matching is longest-first to avoid `일랜` matching inside `일랜시아`
+- Matching is substring-based — `일랜시아헌터` becomes `Elancia헌터` (only the term is substituted; the rest stays)
+- Case-sensitive — if you need both `Elancia` and `elancia` matched, list both
+
+### When the placeholder leaks
+
+If the LLM drops a placeholder (very rare — the system prompt mandates verbatim preservation, and our measurements show ~100% retention), the placeholder is restored to its canonical form via the same lookup. Worst case: the user sees `⟪T0⟫` instead of `Elancia`. This is loud and easy to spot — not silent corruption.
+
 ---
 
 ## Architecture
 
 ```
-index.js          Entry point (Discord client, event wiring)
-config.js         Channel IDs, language constants
-text.js           Sanitize, normalize, mention/emoji preprocessing
-translator.js     DeepSeek API call + cache check
-cache.js          Two-layer translation cache (in-memory LRU + SQLite L2)
-corpus_log.js    4-way parallel corpus logger (translation_log table)
-watch_corpus.js   Real-time tail viewer (read-only, runs alongside the bot)
-webhook.js        Webhook lookup/create with caching
-store.js          In-memory relay ID mapping (for edit/delete sync)
-relay.js          Message handler orchestration (fan-out, collect, log)
-stats.js          In-memory session counters
-metrics.js        Persistent JSONL metrics log
-commands.js       /stats slash command
+index.js              Entry point (Discord client, event wiring)
+config.js             Channel IDs, language constants
+text.js               Sanitize, mention/emoji preprocessing, glossary integration
+translator.js         DeepSeek API call + cache check
+cache.js              Two-layer translation cache (in-memory LRU + SQLite L2)
+glossary.js           Placeholder substitution for canonical proper nouns
+glossary.example.json Starter glossary (gets used if data/glossary.json missing)
+corpus_log.js         4-way parallel corpus logger (translation_log table)
+watch_corpus.js       Real-time tail viewer (read-only, runs alongside the bot)
+webhook.js            Webhook lookup/create with caching
+store.js              In-memory relay ID mapping (for edit/delete sync)
+relay.js              Message handler orchestration (fan-out, collect, log)
+stats.js              In-memory session counters
+metrics.js            Persistent JSONL metrics log
+commands.js           /stats slash command
 ```
 
 ### Hot path summary
@@ -465,9 +544,15 @@ Discord Gateway event
     → renderMentions / detectScript / isTranslatable
     → Promise.all over 3 target languages:
         → buildTranslatedBody
+          → preprocessForTranslation(sourceLang)
+              · mentions/emojis → ⟪T*⟫ placeholders
+              · glossary terms  → ⟪T*⟫ placeholders (term hidden from LLM)
           → cache.get  (L1 mem → L2 SQLite)
           → on miss: translator.translateText → DeepSeek API
           → cache.set (write-through to L1 + L2)
+          → postprocessTranslation(targetLang)
+              · ⟪T*⟫ placeholders restored
+              · glossary tokens → canonical form in target language
         → webhook.send (with original avatar/name)
         → store.recordRelay (for later edit/delete sync)
     → corpus_log.record (4-way parallel row for offline analysis)
