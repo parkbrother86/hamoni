@@ -70,7 +70,7 @@ try {
   const dir = path.dirname(GLOSSARY_PATH);
   if (fs.existsSync(dir)) {
     let pending = null;
-    fs.watch(dir, (_event, filename) => {
+    const watcher = fs.watch(dir, (_event, filename) => {
       if (filename !== 'glossary.json') return;
       if (pending) clearTimeout(pending);
       pending = setTimeout(() => {
@@ -78,6 +78,8 @@ try {
         load();
       }, 200);
     });
+    // unref so the watcher doesn't keep short-lived scripts (tests etc.) alive
+    watcher.unref?.();
   }
 } catch {
   // fs.watch can fail on some filesystems — silently ignore, hot-reload disabled
