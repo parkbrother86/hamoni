@@ -21,6 +21,7 @@ const {
 } = require('./store');
 const stats = require('./stats');
 const corpusLog = require('./corpus_log');
+const contextBuffer = require('./context');
 
 const MAX_INFLIGHT_PER_USER = 5;
 const userInFlight = new Map();
@@ -63,6 +64,45 @@ function getAttachmentUrls(message) {
   );
 }
 
+// Best-effort: fetch the source message this one is replying to, so the
+// translator can resolve referents/addressee. Returns null on any failure.
+async function fetchReplyContext(message) {
+  const ref = message.reference;
+  if (!ref?.messageId) return null;
+  try {
+    const channel =
+      ref.channelId && ref.channelId !== message.channel.id
+        ? await message.client.channels.fetch(ref.channelId)
+        : message.channel;
+    const refMsg = await channel.messages.fetch(ref.messageId);
+    if (refMsg.webhookId) return null;
+    if (!refMsg.content?.trim()) return null;
+    const name =
+      refMsg.member?.displayName ||
+      refMsg.author?.globalName ||
+      refMsg.author?.username ||
+      'user';
+    const text = contextBuffer.sanitizeLine(
+      renderMentions(refMsg.content, refMsg)
+    );
+    if (!text) return null;
+    return { name: contextBuffer.sanitizeName(name), text };
+  } catch {
+    return null;
+  }
+}
+
+function buildContextText(entries, replyEntry) {
+  const lines = [];
+  if (replyEntry) {
+    lines.push(`[in reply to] ${replyEntry.name}: ${replyEntry.text}`);
+  }
+  for (const e of entries) {
+    lines.push(`${e.name}: ${e.text}`);
+  }
+  return lines.join('\n');
+}
+
 async function buildTranslatedBody({
   message,
   rendered,
@@ -70,6 +110,8 @@ async function buildTranslatedBody({
   targetLang,
   isLong,
   hasContent,
+  contextText,
+  targetSpeaker,
 }) {
   if (!hasContent) return '';
 
@@ -93,7 +135,8 @@ async function buildTranslatedBody({
   const translated = await translateText(
     processed,
     sourceLang,
-    targetLang
+    targetLang,
+    { contextText, targetSpeaker }
   );
   return postprocessTranslation(translated, tokens, targetLang);
 }
@@ -166,6 +209,8 @@ async function relayToTarget({
   hasContent,
   attachmentUrls,
   jumpLink,
+  contextText,
+  targetSpeaker,
 }) {
   const translated = await buildTranslatedBody({
     message,
@@ -174,6 +219,8 @@ async function relayToTarget({
     targetLang,
     isLong,
     hasContent,
+    contextText,
+    targetSpeaker,
   });
 
   const finalContent = composeFinalContent({
@@ -257,6 +304,16 @@ async function handleMessage(message) {
         `[${sourceLang}] ${displayName}: ${rendered || '(attachment)'}`
       );
 
+      // Backward-looking context: prior source lines (+ reply target) shared
+      // across all fan-out targets. Built before this message is added to the
+      // buffer, so it never includes the line being translated.
+      const replyEntry = await fetchReplyContext(message);
+      const contextText = buildContextText(
+        contextBuffer.recent(message.channel.id),
+        replyEntry
+      );
+      const targetSpeaker = contextBuffer.sanitizeName(displayName);
+
       const translations = {};
       await Promise.all(
         Object.entries(CHANNELS)
@@ -274,6 +331,8 @@ async function handleMessage(message) {
               hasContent,
               attachmentUrls,
               jumpLink,
+              contextText,
+              targetSpeaker,
             })
               .then((translated) => {
                 if (translated) translations[targetLang] = translated;
@@ -297,6 +356,11 @@ async function handleMessage(message) {
           sourceText: message.content,
           translations,
         });
+      }
+
+      // Add this message to the channel context buffer for future lines.
+      if (hasContent) {
+        contextBuffer.push(message.channel.id, displayName, rendered);
       }
     } finally {
       const remaining = (userInFlight.get(userId) || 1) - 1;
