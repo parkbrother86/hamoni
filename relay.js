@@ -18,6 +18,8 @@ const {
   recordRelay,
   getRelays,
   removeRelays,
+  markDeleted,
+  wasDeleted,
 } = require('./store');
 const stats = require('./stats');
 const corpusLog = require('./corpus_log');
@@ -248,6 +250,25 @@ async function relayToTarget({
     attachmentUrls,
   });
 
+  // Race-guard: if the source was deleted (e.g. Dyno auto-mod) while we were
+  // translating, delete the relay we just sent instead of recording it.
+  if (wasDeleted(message.channelId, message.id)) {
+    try {
+      await webhook.deleteMessage(sent.id);
+      stats.increment('deletesSync');
+      console.log(
+        `Source deleted during translation - removed relay ${sourceLang} -> ${targetLang} channel=${targetChannelId}`
+      );
+    } catch (err) {
+      stats.increment('errors');
+      console.error(
+        `Tombstone cleanup failed channel=${targetChannelId}`,
+        err?.message || err
+      );
+    }
+    return null;
+  }
+
   const snippet =
     (translated.split('\n')[0] || '').slice(0, 60) ||
     (attachmentUrls.length > 0 ? '(attachment)' : '');
@@ -457,6 +478,10 @@ async function handleMessageUpdate(oldMessage, newMessage) {
 
 async function handleMessageDelete(message) {
   try {
+    // Mark before reading relays so any in-flight translation that finishes
+    // after this point will see the tombstone and self-clean.
+    markDeleted(message.channelId, message.id);
+
     const relays = getRelays(message.channelId, message.id);
     if (relays.length === 0) return;
 
@@ -489,8 +514,18 @@ async function handleMessageDelete(message) {
   }
 }
 
+async function handleMessageDeleteBulk(messages) {
+  // Dyno's purge / spam-wave cleanups arrive as bulk deletes. discord.js
+  // emits a Collection here; fan out to the single-delete handler so each
+  // message gets a tombstone and its relays are removed.
+  for (const message of messages.values()) {
+    await handleMessageDelete(message);
+  }
+}
+
 module.exports = {
   handleMessage,
   handleMessageUpdate,
   handleMessageDelete,
+  handleMessageDeleteBulk,
 };

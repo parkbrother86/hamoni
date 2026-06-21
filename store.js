@@ -1,10 +1,35 @@
 const STORE_MAX = 1000;
 const STORE_TTL_MS = 24 * 60 * 60 * 1000;
+const TOMBSTONE_TTL_MS = 60 * 1000;
 
 const store = new Map();
+const tombstones = new Map();
 
 function key(channelId, messageId) {
   return `${channelId}:${messageId}`;
+}
+
+function cleanTombstones(now) {
+  for (const [k, t] of tombstones) {
+    if (now - t > TOMBSTONE_TTL_MS) tombstones.delete(k);
+  }
+}
+
+function markDeleted(channelId, messageId) {
+  const now = Date.now();
+  tombstones.set(key(channelId, messageId), now);
+  cleanTombstones(now);
+}
+
+function wasDeleted(channelId, messageId) {
+  const k = key(channelId, messageId);
+  const t = tombstones.get(k);
+  if (t === undefined) return false;
+  if (Date.now() - t > TOMBSTONE_TTL_MS) {
+    tombstones.delete(k);
+    return false;
+  }
+  return true;
 }
 
 function ensureCapacity() {
@@ -60,4 +85,6 @@ module.exports = {
   recordRelay,
   getRelays,
   removeRelays,
+  markDeleted,
+  wasDeleted,
 };
