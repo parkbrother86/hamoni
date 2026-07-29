@@ -2,74 +2,114 @@
   "version": "2026-07-30",
   "rules": [
     {
-      "id": "profanity",
-      "title": {
-        "kr": "욕설·비속어",
-        "en": "Profanity & slurs",
-        "jp": "暴言・侮辱語",
-        "cn": "辱骂·脏话"
-      },
-      "description": "Direct insults, slurs, or vulgar language aimed at another person. Casual swearing that is not targeted at anyone is NOT a violation."
-    },
-    {
-      "id": "harassment",
-      "title": {
-        "kr": "괴롭힘·인신공격",
-        "en": "Harassment & personal attacks",
-        "jp": "嫌がらせ・個人攻撃",
-        "cn": "骚扰·人身攻击"
-      },
-      "description": "Repeated targeting, bullying, personal attacks, stalking, or coordinated pile-ons against a specific user. Use recent-message context to detect sustained harassment."
-    },
-    {
-      "id": "hate",
-      "title": {
-        "kr": "혐오·차별",
-        "en": "Hate speech & discrimination",
-        "jp": "ヘイト・差別",
-        "cn": "仇恨·歧视"
-      },
-      "description": "Attacks or dehumanization based on race, ethnicity, nationality, gender, sexual orientation, religion, or disability."
-    },
-    {
-      "id": "threats",
-      "title": {
-        "kr": "위협·폭력",
-        "en": "Threats & violence",
-        "jp": "脅迫・暴力",
-        "cn": "威胁·暴力"
-      },
-      "description": "Credible threats of real-world violence, harm, or incitement of violence against a person or group. In-game combat talk (e.g. 'I'll kill your character') is NOT a violation."
-    },
-    {
-      "id": "nsfw",
-      "title": {
-        "kr": "음란·성적 콘텐츠",
-        "en": "Sexual / NSFW content",
-        "jp": "わいせつ・性的内容",
-        "cn": "色情·不良内容"
-      },
-      "description": "Explicit sexual content, sexual solicitation, or sharing of NSFW material in a general chat channel."
-    },
-    {
       "id": "spam",
       "title": {
-        "kr": "스팸·도배·광고",
-        "en": "Spam, flooding & advertising",
-        "jp": "スパム・連投・宣伝",
-        "cn": "刷屏·广告"
+        "kr": "도배·반복 스팸",
+        "en": "Spam / repetitive flooding",
+        "jp": "連投・スパム",
+        "cn": "刷屏·重复"
       },
-      "description": "Flooding the channel with repeated messages, unsolicited advertising, scam links, or mass mentions. Use recent-message context to detect repetition."
+      "description": "Meaningless repeated messages flooding the channel."
+    },
+    {
+      "id": "offensive",
+      "title": {
+        "kr": "불쾌감을 주는 내용",
+        "en": "Content that discomforts others",
+        "jp": "不快感を与える内容",
+        "cn": "令人不适的内容"
+      },
+      "description": "Content likely to make other users uncomfortable or offended."
+    },
+    {
+      "id": "profanity_nsfw",
+      "title": {
+        "kr": "욕설·비속어·음란",
+        "en": "Profanity / sexual / NSFW",
+        "jp": "暴言・わいせつ",
+        "cn": "辱骂·色情"
+      },
+      "description": "Profanity, vulgar language, or sexual / explicit / NSFW content."
+    },
+    {
+      "id": "discrimination",
+      "title": {
+        "kr": "차별적 발언",
+        "en": "Discrimination",
+        "jp": "差別的発言",
+        "cn": "歧视言论"
+      },
+      "description": "Any discriminatory remarks based on race, gender, disability, region of origin, etc."
+    },
+    {
+      "id": "inappropriate_profile",
+      "title": {
+        "kr": "부적절한 닉네임·프로필",
+        "en": "Inappropriate nickname / profile",
+        "jp": "不適切なニックネーム・プロフィール",
+        "cn": "不当昵称·头像"
+      },
+      "description": "Using an inappropriate nickname or profile picture. (Note: usually not detectable from message text alone.)"
+    },
+    {
+      "id": "advertising",
+      "title": {
+        "kr": "광고·사행성 홍보",
+        "en": "Advertising / gambling promotion",
+        "jp": "宣伝・射幸性の勧誘",
+        "cn": "广告·赌博推广"
+      },
+      "description": "Advertising posts, promotion, or content that induces gambling / speculation."
     },
     {
       "id": "personal_info",
       "title": {
         "kr": "개인정보 유출",
-        "en": "Doxxing / private information",
-        "jp": "個人情報の晒し",
-        "cn": "泄露隐私"
+        "en": "Leaking personal information",
+        "jp": "個人情報の流出",
+        "cn": "泄露个人信息"
       },
-      "description": "Sharing another person's private information (real name, address, phone, account details) without consent."
+      "description": "Leaking another person's personal information (name, address, phone number, IP, etc.)."
+    },
+    {
+      "id": "other_game_promo",
+      "title": {
+        "kr": "타 게임·커뮤니티 홍보",
+        "en": "Other game / community promotion",
+        "jp": "他ゲーム・他コミュニティの宣伝",
+        "cn": "其他游戏·社区推广"
+      },
+      "description": "Content or promotion related to games or communities other than Elancia."
+    },
+    {
+      "id": "impersonation",
+      "title": {
+        "kr": "제작진·팀원 사칭",
+        "en": "Impersonating staff / team",
+        "jp": "運営・スタッフのなりすまし",
+        "cn": "冒充制作组·团队"
+      },
+      "description": "Impersonating the developers, team members, outsourced staff, or any equivalent."
+    },
+    {
+      "id": "exploit_sharing",
+      "title": {
+        "kr": "취약점 공유·유포",
+        "en": "Sharing exploits / vulnerabilities",
+        "jp": "脆弱性の共有・拡散",
+        "cn": "分享·传播漏洞"
+      },
+      "description": "Sharing or spreading game exploits or vulnerabilities."
+    },
+    {
+      "id": "targeted_harassment",
+      "title": {
+        "kr": "특정인 비난·욕설",
+        "en": "Targeted harassment",
+        "jp": "特定個人への中傷",
+        "cn": "针对个人的辱骂"
+      },
+      "description": "Naming a specific person to disparage, insult, curse at, or attack them."
     }
   ]
 }
