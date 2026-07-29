@@ -1,15 +1,28 @@
 const {
   SlashCommandBuilder,
+  ContextMenuCommandBuilder,
+  ApplicationCommandType,
   EmbedBuilder,
   MessageFlags,
 } = require('discord.js');
 
 const { snapshot } = require('./stats');
 const { readRecent, summarize } = require('./metrics');
+const { handleReport } = require('./report');
 
 const statsCommand = new SlashCommandBuilder()
   .setName('stats')
   .setDescription('번역 봇 통계 보기');
+
+// Right-click a message -> Apps -> Report. Localized per client language.
+const reportCommand = new ContextMenuCommandBuilder()
+  .setName('Report')
+  .setNameLocalizations({
+    ko: '신고',
+    ja: '通報',
+    'zh-CN': '举报',
+  })
+  .setType(ApplicationCommandType.Message);
 
 function formatDuration(ms) {
   const sec = Math.floor(ms / 1000);
@@ -93,11 +106,11 @@ async function handleStats(interaction) {
 
 async function registerCommands(client) {
   if (!client.application) return;
-  const payload = [statsCommand.toJSON()];
+  const payload = [statsCommand.toJSON(), reportCommand.toJSON()];
 
   if (client.guilds.cache.size === 0) {
     await client.application.commands.set(payload);
-    console.log('Slash commands registered globally: /stats');
+    console.log('Commands registered globally: /stats, Report (context menu)');
     return;
   }
 
@@ -105,7 +118,7 @@ async function registerCommands(client) {
     try {
       await guild.commands.set(payload);
       console.log(
-        `Slash commands registered on guild ${guild.name}: /stats`
+        `Commands registered on guild ${guild.name}: /stats, Report (context menu)`
       );
     } catch (err) {
       console.error(
@@ -117,6 +130,27 @@ async function registerCommands(client) {
 }
 
 async function handleInteraction(interaction) {
+  if (interaction.isMessageContextMenuCommand()) {
+    if (interaction.commandName === 'Report') {
+      try {
+        await handleReport(interaction);
+      } catch (err) {
+        console.error('Report command failed', err?.message || err);
+        try {
+          const body = { content: '신고 처리 중 오류가 발생했습니다.' };
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(body);
+          } else {
+            await interaction.reply({ ...body, flags: MessageFlags.Ephemeral });
+          }
+        } catch {
+          // interaction may have expired — nothing more to do
+        }
+      }
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'stats') {
     try {

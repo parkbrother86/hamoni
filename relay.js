@@ -24,6 +24,36 @@ const {
 const stats = require('./stats');
 const corpusLog = require('./corpus_log');
 const contextBuffer = require('./context');
+const moderation = require('./moderation');
+const modlog = require('./modlog');
+const { MODERATION } = require('./config');
+
+// Passive per-message pre-screen. Fired non-blocking so it never adds latency
+// to the translation relay. High-confidence flags go to mod-log for human
+// review only — the prescreen NEVER deletes or punishes (that is the report +
+// reasoner path). Failures are swallowed.
+function firePrescreen(message, rendered) {
+  if (!MODERATION.prescreenEnabled) return;
+  if (!rendered) return;
+  moderation
+    .prescreen(rendered)
+    .then((result) => {
+      if (!result?.suspect) return;
+      stats.increment('prescreenFlags');
+      const displayName =
+        message.member?.displayName ||
+        message.author?.globalName ||
+        message.author?.username;
+      return modlog.postPrescreenFlag(message.client, {
+        authorTag: message.author?.tag || displayName,
+        authorId: message.author?.id,
+        channelName: message.channel?.name,
+        ruleId: result.ruleId,
+        content: rendered,
+      });
+    })
+    .catch(() => {});
+}
 
 const MAX_INFLIGHT_PER_USER = 5;
 const userInFlight = new Map();
@@ -279,6 +309,7 @@ async function relayToTarget({
     targetChannelId,
     webhookMessageId: sent.id,
     snippet,
+    authorId: message.author.id,
   });
 
   console.log(
@@ -382,6 +413,11 @@ async function handleMessage(message) {
       // Add this message to the channel context buffer for future lines.
       if (hasContent) {
         contextBuffer.push(message.channel.id, displayName, rendered);
+      }
+
+      // Passive moderation pre-screen — non-blocking, flag-only.
+      if (hasContent) {
+        firePrescreen(message, rendered);
       }
     } finally {
       const remaining = (userInFlight.get(userId) || 1) - 1;

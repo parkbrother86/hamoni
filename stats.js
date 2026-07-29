@@ -7,6 +7,12 @@ const counters = {
   errors: 0,
   editsSync: 0,
   deletesSync: 0,
+  reports: 0,
+  reportViolations: 0,
+  reportBlocked: 0,
+  moderationDeletes: 0,
+  timeouts: 0,
+  prescreenFlags: 0,
 };
 
 const startedAt = Date.now();
