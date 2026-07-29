@@ -22,6 +22,11 @@ const MINUTE_MS = 60 * 1000;
 
 // sourceMessageId -> { outcome, ts }
 const verdictCache = new Map();
+// sourceMessageId -> ts : a judgment currently IN FLIGHT for that message.
+// Closes the concurrency window where several people report the same message
+// within the (multi-second) judge call, before the first verdict is cached.
+const pending = new Map();
+const PENDING_TTL_MS = 60 * 1000; // safety net if a report dies mid-judge
 // reporterId -> array of timestamps within the trailing hour
 const reporterHits = new Map();
 // global reasoner-call timestamps within the trailing minute
@@ -39,6 +44,26 @@ function getCached(sourceMessageId) {
 
 function setCached(sourceMessageId, outcome) {
   verdictCache.set(sourceMessageId, { outcome, ts: Date.now() });
+  pending.delete(sourceMessageId); // in-flight judgment resolved
+}
+
+// Atomically claim a message for judgment. Returns false if it already has a
+// cached verdict or another judgment is in flight. Synchronous (no await
+// between check and set), so concurrent reports can never both win.
+function claim(sourceMessageId) {
+  const now = Date.now();
+  const cached = verdictCache.get(sourceMessageId);
+  if (cached && now - cached.ts <= verdictCacheMs) return false;
+  const inFlight = pending.get(sourceMessageId);
+  if (inFlight !== undefined && now - inFlight <= PENDING_TTL_MS) return false;
+  pending.set(sourceMessageId, now);
+  return true;
+}
+
+// Release an in-flight claim WITHOUT caching a verdict (error paths), so the
+// message can be reported again.
+function release(sourceMessageId) {
+  pending.delete(sourceMessageId);
 }
 
 function prune(list, windowMs, now) {
@@ -76,5 +101,7 @@ function reserve(reporterId) {
 module.exports = {
   getCached,
   setCached,
+  claim,
+  release,
   reserve,
 };

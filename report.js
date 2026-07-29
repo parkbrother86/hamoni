@@ -167,7 +167,7 @@ async function handleReportSubmit(interaction) {
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  // Re-check dedup (another reporter may have processed it since the modal opened).
+  // Re-check dedup (another reporter may have finished it since the modal opened).
   const cached = abuse.getCached(sourceMessageId);
   if (cached) {
     stats.increment('reportBlocked');
@@ -175,125 +175,145 @@ async function handleReportSubmit(interaction) {
     return;
   }
 
-  const gate = abuse.reserve(interaction.user.id);
-  if (!gate.ok) {
+  // In-flight claim: block concurrent reports of the SAME message while its
+  // judgment is running, so a message reported by many people at once cannot
+  // rack up multiple strikes.
+  if (!abuse.claim(sourceMessageId)) {
     stats.increment('reportBlocked');
-    await interaction.editReply({
-      content:
-        gate.reason === 'reporter'
-          ? '시간당 신고 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.'
-          : '지금 신고가 많아 잠시 대기가 필요합니다. 잠시 후 다시 시도해 주세요.',
-    });
+    await interaction.editReply({ content: '이미 다른 신고가 처리 중인 메시지입니다.' });
     return;
   }
 
-  let sourceChannel;
-  let sourceMessage;
   try {
-    sourceChannel = await client.channels.fetch(sourceChannelId);
-    sourceMessage = await sourceChannel.messages.fetch(sourceMessageId);
-  } catch {
-    await interaction.editReply({
-      content: '원본 메시지를 찾을 수 없습니다 (이미 삭제되었을 수 있어요).',
-    });
-    return;
-  }
+    const gate = abuse.reserve(interaction.user.id);
+    if (!gate.ok) {
+      stats.increment('reportBlocked');
+      await interaction.editReply({
+        content:
+          gate.reason === 'reporter'
+            ? '시간당 신고 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.'
+            : '지금 신고가 많아 잠시 대기가 필요합니다. 잠시 후 다시 시도해 주세요.',
+      });
+      return;
+    }
 
-  const content = sourceMessage.content?.trim() || '';
-  if (!content) {
-    await interaction.editReply({ content: '텍스트가 없는 메시지는 판단할 수 없습니다.' });
-    return;
-  }
-
-  const member = await interaction.guild.members.fetch(authorId).catch(() => null);
-  const offenderName =
-    member?.displayName ||
-    sourceMessage.member?.displayName ||
-    sourceMessage.author?.globalName ||
-    sourceMessage.author?.username ||
-    'user';
-  const offenderTag = sourceMessage.author?.tag || offenderName;
-
-  const history = await moderation.gatherUserHistory(sourceChannel, authorId);
-
-  const verdict = await moderation.judge({
-    content,
-    history,
-    authorName: offenderName,
-    hint: { reason, suspectedRule },
-  });
-
-  if (verdict.error) {
-    await interaction.editReply({ content: '판단에 실패했습니다. 잠시 후 다시 시도해 주세요.' });
-    return;
-  }
-
-  let action = '없음 (위반 아님)';
-  let replyText = '검토 결과: 규정 위반이 아닙니다.';
-
-  if (verdict.violation) {
-    stats.increment('reportViolations');
-    const count = strikes.add(authorId, { ruleId: verdict.ruleId, messageId: sourceMessageId });
-    const hours = strikes.timeoutHours(count);
-
+    let sourceChannel;
+    let sourceMessage;
     try {
-      await sourceMessage.delete();
-      stats.increment('moderationDeletes');
-    } catch (err) {
-      console.error('report: source delete failed —', err?.message || err);
+      sourceChannel = await client.channels.fetch(sourceChannelId);
+      sourceMessage = await sourceChannel.messages.fetch(sourceMessageId);
+    } catch {
+      await interaction.editReply({
+        content: '원본 메시지를 찾을 수 없습니다 (이미 삭제되었을 수 있어요).',
+      });
+      return;
     }
 
-    let timedOut = false;
-    if (hours > 0 && member) {
-      try {
-        await member.timeout(hours * 60 * 60 * 1000, `rule ${verdict.ruleId}, strike ${count}`);
-        timedOut = true;
-        stats.increment('timeouts');
-      } catch (err) {
-        console.error('report: timeout failed —', err?.message || err);
-      }
+    const content = sourceMessage.content?.trim() || '';
+    if (!content) {
+      await interaction.editReply({ content: '텍스트가 없는 메시지는 판단할 수 없습니다.' });
+      return;
     }
 
-    await roles.syncWarnRole(member, count);
-    await announce(client, {
-      sourceChannelId,
-      authorId,
-      name: offenderName,
-      ruleId: verdict.ruleId,
-      count,
-      hours,
+    const member = await interaction.guild.members.fetch(authorId).catch(() => null);
+    const offenderName =
+      member?.displayName ||
+      sourceMessage.member?.displayName ||
+      sourceMessage.author?.globalName ||
+      sourceMessage.author?.username ||
+      'user';
+    const offenderTag = sourceMessage.author?.tag || offenderName;
+
+    const history = await moderation.gatherUserHistory(sourceChannel, authorId);
+
+    const verdict = await moderation.judge({
+      content,
+      history,
+      authorName: offenderName,
+      hint: { reason, suspectedRule },
     });
 
-    action =
-      hours > 0
-        ? `삭제 + 경고 ${count}회 + 타임아웃 ${hours}시간${timedOut ? '' : ' (권한 부족으로 실패)'}`
-        : `삭제 + 경고 ${count}회`;
-    replyText = `처리 완료: ${rules.getTitle(verdict.ruleId, 'kr')} 위반 · ${action}`;
+    if (verdict.error) {
+      // Release so it can be retried; nothing was enforced.
+      abuse.release(sourceMessageId);
+      await interaction.editReply({ content: '판단에 실패했습니다. 잠시 후 다시 시도해 주세요.' });
+      return;
+    }
+
+    let action = '없음 (위반 아님)';
+    let replyText = '검토 결과: 규정 위반이 아닙니다.';
+
+    if (verdict.violation) {
+      stats.increment('reportViolations');
+      const count = strikes.add(authorId, { ruleId: verdict.ruleId, messageId: sourceMessageId });
+      const hours = strikes.timeoutHours(count);
+
+      let deleted = false;
+      try {
+        await sourceMessage.delete();
+        deleted = true;
+        stats.increment('moderationDeletes');
+      } catch (err) {
+        console.error('report: source delete failed —', err?.message || err);
+      }
+
+      let timedOut = false;
+      if (hours > 0 && member) {
+        try {
+          await member.timeout(hours * 60 * 60 * 1000, `rule ${verdict.ruleId}, strike ${count}`);
+          timedOut = true;
+          stats.increment('timeouts');
+        } catch (err) {
+          console.error('report: timeout failed —', err?.message || err);
+        }
+      }
+
+      await roles.syncWarnRole(member, count);
+      await announce(client, {
+        sourceChannelId,
+        authorId,
+        name: offenderName,
+        ruleId: verdict.ruleId,
+        count,
+        hours,
+      });
+
+      const deleteNote = deleted ? '삭제' : '삭제 실패(봇 권한 확인)';
+      action =
+        hours > 0
+          ? `${deleteNote} + 경고 ${count}회 + 타임아웃 ${hours}시간${timedOut ? '' : ' (권한 부족으로 실패)'}`
+          : `${deleteNote} + 경고 ${count}회`;
+      replyText = `처리 완료: ${rules.getTitle(verdict.ruleId, 'kr')} 위반 · ${action}`;
+    }
+
+    abuse.setCached(sourceMessageId, replyText);
+
+    modlog.postVerdict(client, {
+      reporterTag: interaction.user.tag,
+      reporterReason: reason || suspectedRule || null,
+      offenderTag,
+      offenderId: authorId,
+      channelName: sourceChannel.name,
+      content,
+      verdict,
+      action,
+    });
+
+    await interaction.editReply({
+      embeds: [
+        resultEmbed({
+          violation: verdict.violation,
+          ruleTitle: verdict.violation ? rules.getTitle(verdict.ruleId, 'kr') : '',
+          action,
+          reason: verdict.reason,
+        }),
+      ],
+    });
+  } finally {
+    // setCached already cleared the claim on success; this covers early
+    // returns / throws so a message is never left permanently locked.
+    abuse.release(sourceMessageId);
   }
-
-  abuse.setCached(sourceMessageId, replyText);
-
-  modlog.postVerdict(client, {
-    reporterTag: interaction.user.tag,
-    reporterReason: reason || suspectedRule || null,
-    offenderTag,
-    offenderId: authorId,
-    channelName: sourceChannel.name,
-    content,
-    verdict,
-    action,
-  });
-
-  await interaction.editReply({
-    embeds: [
-      resultEmbed({
-        violation: verdict.violation,
-        ruleTitle: verdict.violation ? rules.getTitle(verdict.ruleId, 'kr') : '',
-        action,
-        reason: verdict.reason,
-      }),
-    ],
-  });
 }
 
 module.exports = {
