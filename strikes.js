@@ -67,6 +67,21 @@ function add(userId, { ruleId, messageId }) {
   return entry.count;
 }
 
+// Undo the most recent strike (false-positive recovery). Returns new count.
+function decrement(userId) {
+  const entry = store[userId];
+  if (!entry || entry.count <= 0) return 0;
+  entry.count -= 1;
+  entry.history.pop();
+  entry.lastTs = Date.now();
+  save();
+  return entry.count;
+}
+
+function getHistory(userId) {
+  return store[userId]?.history ? store[userId].history.slice() : [];
+}
+
 // Timeout duration in hours for a given cumulative strike count.
 function timeoutHours(count) {
   const start = MODERATION.strike.timeoutStartStrike;
@@ -77,6 +92,8 @@ function timeoutHours(count) {
 module.exports = {
   get,
   add,
+  decrement,
+  getHistory,
   timeoutHours,
   _reload: load,
 };

@@ -68,6 +68,28 @@ const MODERATION = {
   strike: {
     timeoutStartStrike: 3, // strike count at which timeouts begin (3 -> 1h, 4 -> 2h ...)
   },
+
+  // Optional public "warning count" role tags shown next to the offender's name.
+  // Highest tier whose `atLeast` <= cumulative strike count is applied; lower
+  // warn-tier roles are removed. Empty by default (feature off until role ids
+  // are filled in). Requires the bot to have Manage Roles and a role positioned
+  // above the tier roles.
+  //   warnRoleTiers: [
+  //     { atLeast: 1, roleId: '...' },
+  //     { atLeast: 3, roleId: '...' },
+  //   ],
+  warnRoleTiers: [],
+
+  // Max characters accepted from the reporter's free-text reason.
+  reasonMaxLength: 300,
+};
+
+// Appended to a warning notice when the NEXT strike would trigger a timeout.
+const ESCALATION_NOTE = {
+  kr: '\n⏳ 다음 위반 시 채팅이 일시 제한됩니다.',
+  en: '\n⏳ Next violation may result in a mute.',
+  jp: '\n⏳ 次回の違反でミュートの可能性があります。',
+  cn: '\n⏳ 再次违规可能会被禁言。',
 };
 
 // Public localized moderation notices posted plaintext into every channel in
@@ -97,4 +119,5 @@ module.exports = {
   MODERATION,
   WARN_TEMPLATES,
   TIMEOUT_TEMPLATES,
+  ESCALATION_NOTE,
 };

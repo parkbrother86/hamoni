@@ -8,7 +8,8 @@ const {
 
 const { snapshot } = require('./stats');
 const { readRecent, summarize } = require('./metrics');
-const { handleReport } = require('./report');
+const { showReportModal, handleReportSubmit } = require('./report');
+const { handleButton, handleStrikesCommand } = require('./modactions');
 
 const statsCommand = new SlashCommandBuilder()
   .setName('stats')
@@ -23,6 +24,14 @@ const reportCommand = new ContextMenuCommandBuilder()
     'zh-CN': '举报',
   })
   .setType(ApplicationCommandType.Message);
+
+// Admin-only: look up a user's cumulative warning strikes.
+const strikesCommand = new SlashCommandBuilder()
+  .setName('strikes')
+  .setDescription('유저의 누적 경고 조회 (관리자)')
+  .addUserOption((opt) =>
+    opt.setName('user').setDescription('조회할 유저').setRequired(true)
+  );
 
 function formatDuration(ms) {
   const sec = Math.floor(ms / 1000);
@@ -106,11 +115,15 @@ async function handleStats(interaction) {
 
 async function registerCommands(client) {
   if (!client.application) return;
-  const payload = [statsCommand.toJSON(), reportCommand.toJSON()];
+  const payload = [
+    statsCommand.toJSON(),
+    strikesCommand.toJSON(),
+    reportCommand.toJSON(),
+  ];
 
   if (client.guilds.cache.size === 0) {
     await client.application.commands.set(payload);
-    console.log('Commands registered globally: /stats, Report (context menu)');
+    console.log('Commands registered globally: /stats, /strikes, Report (context menu)');
     return;
   }
 
@@ -118,7 +131,7 @@ async function registerCommands(client) {
     try {
       await guild.commands.set(payload);
       console.log(
-        `Commands registered on guild ${guild.name}: /stats, Report (context menu)`
+        `Commands registered on guild ${guild.name}: /stats, /strikes, Report (context menu)`
       );
     } catch (err) {
       console.error(
@@ -129,23 +142,53 @@ async function registerCommands(client) {
   }
 }
 
+async function safeErrorReply(interaction, content) {
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content });
+    } else {
+      await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+    }
+  } catch {
+    // interaction may have expired — nothing more to do
+  }
+}
+
 async function handleInteraction(interaction) {
+  // Right-click Report -> open reason modal.
   if (interaction.isMessageContextMenuCommand()) {
     if (interaction.commandName === 'Report') {
       try {
-        await handleReport(interaction);
+        await showReportModal(interaction);
       } catch (err) {
-        console.error('Report command failed', err?.message || err);
-        try {
-          const body = { content: '신고 처리 중 오류가 발생했습니다.' };
-          if (interaction.deferred || interaction.replied) {
-            await interaction.editReply(body);
-          } else {
-            await interaction.reply({ ...body, flags: MessageFlags.Ephemeral });
-          }
-        } catch {
-          // interaction may have expired — nothing more to do
-        }
+        console.error('Report modal failed', err?.message || err);
+        await safeErrorReply(interaction, '신고 처리 중 오류가 발생했습니다.');
+      }
+    }
+    return;
+  }
+
+  // Report reason modal submitted -> judge + enforce.
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId.startsWith('rpt|')) {
+      try {
+        await handleReportSubmit(interaction);
+      } catch (err) {
+        console.error('Report submit failed', err?.message || err);
+        await safeErrorReply(interaction, '신고 처리 중 오류가 발생했습니다.');
+      }
+    }
+    return;
+  }
+
+  // Mod-log recovery buttons.
+  if (interaction.isButton()) {
+    if (interaction.customId.startsWith('mod|')) {
+      try {
+        await handleButton(interaction);
+      } catch (err) {
+        console.error('Mod action failed', err?.message || err);
+        await safeErrorReply(interaction, '작업 처리 중 오류가 발생했습니다.');
       }
     }
     return;
@@ -157,6 +200,13 @@ async function handleInteraction(interaction) {
       await handleStats(interaction);
     } catch (err) {
       console.error('Stats command failed', err?.message || err);
+    }
+  } else if (interaction.commandName === 'strikes') {
+    try {
+      await handleStrikesCommand(interaction);
+    } catch (err) {
+      console.error('Strikes command failed', err?.message || err);
+      await safeErrorReply(interaction, '조회 중 오류가 발생했습니다.');
     }
   }
 }
