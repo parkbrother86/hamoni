@@ -1,0 +1,75 @@
+{
+  "version": "2026-07-30",
+  "rules": [
+    {
+      "id": "profanity",
+      "title": {
+        "kr": "욕설·비속어",
+        "en": "Profanity & slurs",
+        "jp": "暴言・侮辱語",
+        "cn": "辱骂·脏话"
+      },
+      "description": "Direct insults, slurs, or vulgar language aimed at another person. Casual swearing that is not targeted at anyone is NOT a violation."
+    },
+    {
+      "id": "harassment",
+      "title": {
+        "kr": "괴롭힘·인신공격",
+        "en": "Harassment & personal attacks",
+        "jp": "嫌がらせ・個人攻撃",
+        "cn": "骚扰·人身攻击"
+      },
+      "description": "Repeated targeting, bullying, personal attacks, stalking, or coordinated pile-ons against a specific user. Use recent-message context to detect sustained harassment."
+    },
+    {
+      "id": "hate",
+      "title": {
+        "kr": "혐오·차별",
+        "en": "Hate speech & discrimination",
+        "jp": "ヘイト・差別",
+        "cn": "仇恨·歧视"
+      },
+      "description": "Attacks or dehumanization based on race, ethnicity, nationality, gender, sexual orientation, religion, or disability."
+    },
+    {
+      "id": "threats",
+      "title": {
+        "kr": "위협·폭력",
+        "en": "Threats & violence",
+        "jp": "脅迫・暴力",
+        "cn": "威胁·暴力"
+      },
+      "description": "Credible threats of real-world violence, harm, or incitement of violence against a person or group. In-game combat talk (e.g. 'I'll kill your character') is NOT a violation."
+    },
+    {
+      "id": "nsfw",
+      "title": {
+        "kr": "음란·성적 콘텐츠",
+        "en": "Sexual / NSFW content",
+        "jp": "わいせつ・性的内容",
+        "cn": "色情·不良内容"
+      },
+      "description": "Explicit sexual content, sexual solicitation, or sharing of NSFW material in a general chat channel."
+    },
+    {
+      "id": "spam",
+      "title": {
+        "kr": "스팸·도배·광고",
+        "en": "Spam, flooding & advertising",
+        "jp": "スパム・連投・宣伝",
+        "cn": "刷屏·广告"
+      },
+      "description": "Flooding the channel with repeated messages, unsolicited advertising, scam links, or mass mentions. Use recent-message context to detect repetition."
+    },
+    {
+      "id": "personal_info",
+      "title": {
+        "kr": "개인정보 유출",
+        "en": "Doxxing / private information",
+        "jp": "個人情報の晒し",
+        "cn": "泄露隐私"
+      },
+      "description": "Sharing another person's private information (real name, address, phone, account details) without consent."
+    }
+  ]
+}

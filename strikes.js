@@ -1,0 +1,82 @@
+// Per-user moderation strike ledger, persisted to data/strikes.json.
+//
+// data/ is gitignored (runtime data), so strike history is private and never
+// committed. Strikes survive restarts (unlike the in-memory relay store), which
+// matters because timeouts escalate with cumulative count.
+//
+// Escalation ladder (see config.MODERATION.strike):
+//   strike 1..(start-1) : delete + public warning, no timeout
+//   strike >= start     : delete + timeout of (count - start + 1) hours
+//   With start = 3: 3 -> 1h, 4 -> 2h, 5 -> 3h, ... (+1h per additional strike).
+
+const fs = require('fs');
+const path = require('path');
+
+const { MODERATION } = require('./config');
+
+const STRIKES_PATH = path.join(__dirname, 'data', 'strikes.json');
+const MAX_HISTORY = 50; // cap per-user history to keep the file bounded
+
+let store = {};
+
+function load() {
+  try {
+    if (fs.existsSync(STRIKES_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(STRIKES_PATH, 'utf8'));
+      if (parsed && typeof parsed === 'object') store = parsed;
+    }
+  } catch (err) {
+    console.error('strikes: load failed —', err?.message || err);
+    store = {};
+  }
+}
+
+function save() {
+  try {
+    const dir = path.dirname(STRIKES_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    // temp + rename for atomic write (avoid a torn file on crash)
+    const tmp = `${STRIKES_PATH}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf8');
+    fs.renameSync(tmp, STRIKES_PATH);
+  } catch (err) {
+    console.error('strikes: save failed —', err?.message || err);
+  }
+}
+
+load();
+
+function get(userId) {
+  return store[userId]?.count || 0;
+}
+
+// Record a new upheld violation. Returns the new cumulative count.
+function add(userId, { ruleId, messageId }) {
+  let entry = store[userId];
+  if (!entry) {
+    entry = { count: 0, history: [] };
+    store[userId] = entry;
+  }
+  entry.count += 1;
+  entry.lastTs = Date.now();
+  entry.history.push({ ruleId, messageId, ts: entry.lastTs });
+  if (entry.history.length > MAX_HISTORY) {
+    entry.history = entry.history.slice(-MAX_HISTORY);
+  }
+  save();
+  return entry.count;
+}
+
+// Timeout duration in hours for a given cumulative strike count.
+function timeoutHours(count) {
+  const start = MODERATION.strike.timeoutStartStrike;
+  if (count < start) return 0;
+  return count - start + 1;
+}
+
+module.exports = {
+  get,
+  add,
+  timeoutHours,
+  _reload: load,
+};
