@@ -54,9 +54,14 @@ const MODERATION = {
   prescreenModel: 'deepseek-v4-flash',
   prescreenEnabled: process.env.PRESCREEN_ENABLED !== '0',
 
-  // Deterministic per-user history gathered as judge context.
-  historyLimit: 15, // recent messages from the reported user handed to the judge
-  historyScan: 100, // channel messages fetched, then filtered by author
+  // Only messages younger than this can be reported (no retroactive reports on
+  // ancient messages).
+  reportMaxAgeMs: 60 * 60 * 1000, // 1 hour
+
+  // Conversation context gathered AROUND the reported message (all speakers),
+  // handed to the judge so it reads the message in situ, not in isolation.
+  contextBefore: 20, // lines before the reported message
+  contextAfter: 10, // lines after the reported message
 
   // Report-abuse defense (protects the reasoner path from flooding).
   limits: {

@@ -64,6 +64,17 @@ async function showReportModal(interaction) {
     return;
   }
 
+  // Age gate: block reports on old messages (no retroactive reporting).
+  const ageMs = Date.now() - interaction.targetMessage.createdTimestamp;
+  if (ageMs > MODERATION.reportMaxAgeMs) {
+    const mins = Math.round(MODERATION.reportMaxAgeMs / 60000);
+    await interaction.reply({
+      content: `${mins}분이 지난 메시지는 신고할 수 없습니다.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   const resolved = resolveTarget(interaction.targetMessage);
   if (resolved.error) {
     await interaction.reply({ content: resolved.error, flags: MessageFlags.Ephemeral });
@@ -224,11 +235,11 @@ async function handleReportSubmit(interaction) {
       'user';
     const offenderTag = sourceMessage.author?.tag || offenderName;
 
-    const history = await moderation.gatherUserHistory(sourceChannel, authorId);
+    const context = await moderation.gatherContext(sourceChannel, sourceMessage);
 
     const verdict = await moderation.judge({
       content,
-      history,
+      context,
       authorName: offenderName,
       hint: { reason, suspectedRule },
     });
