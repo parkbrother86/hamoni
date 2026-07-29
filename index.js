@@ -17,6 +17,7 @@ const {
   registerCommands,
   handleInteraction,
 } = require('./commands');
+const { handleLogMessage } = require('./modconsole');
 
 const client = new Client({
   intents: [
@@ -47,6 +48,7 @@ client.once('clientReady', async () => {
 });
 
 client.on('messageCreate', handleMessage);
+client.on('messageCreate', handleLogMessage);
 client.on('messageUpdate', handleMessageUpdate);
 client.on('messageDelete', handleMessageDelete);
 client.on('messageDeleteBulk', handleMessageDeleteBulk);

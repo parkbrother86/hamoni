@@ -82,6 +82,29 @@ function getHistory(userId) {
   return store[userId]?.history ? store[userId].history.slice() : [];
 }
 
+// Full manual reset — clears count + history (admin forgiveness).
+function reset(userId) {
+  if (store[userId]) {
+    delete store[userId];
+    save();
+  }
+  return 0;
+}
+
+// Manually set the cumulative count (clamped >= 0), keeping history.
+function set(userId, n) {
+  const count = Math.max(0, Math.floor(Number(n) || 0));
+  let entry = store[userId];
+  if (!entry) {
+    entry = { count: 0, history: [] };
+    store[userId] = entry;
+  }
+  entry.count = count;
+  entry.lastTs = Date.now();
+  save();
+  return count;
+}
+
 // Timeout duration in hours for a given cumulative strike count.
 function timeoutHours(count) {
   const start = MODERATION.strike.timeoutStartStrike;
@@ -93,6 +116,8 @@ module.exports = {
   get,
   add,
   decrement,
+  reset,
+  set,
   getHistory,
   timeoutHours,
   _reload: load,
