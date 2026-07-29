@@ -206,7 +206,8 @@ async function prescreen(text) {
         },
       ],
       temperature: 0,
-      max_tokens: 256,
+      // No max_tokens cap here either — output is a tiny JSON object and abuse
+      // is handled by rate limits, not per-inference token budgets.
       response_format: { type: 'json_object' },
       thinking: { type: 'disabled' },
     });
