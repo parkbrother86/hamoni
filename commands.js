@@ -58,11 +58,21 @@ function renderSection(label, summary) {
     return `**${label}**\n데이터 없음`;
   }
   const hitRatePct = (summary.hitRate * 100).toFixed(1);
-  return [
+  const lines = [
     `**${label}**`,
-    `콜수 \`${summary.total}\` · hit rate \`${hitRatePct}%\` · errors \`${summary.errors}\``,
+    `콜수 \`${summary.total}\` · 로컬 캐시 hit \`${hitRatePct}%\` · errors \`${summary.errors}\``,
     `p50 \`${formatMs(summary.latency.p50)}\` · p95 \`${formatMs(summary.latency.p95)}\` · p99 \`${formatMs(summary.latency.p99)}\` · avg \`${formatMs(summary.latency.avg)}\``,
-  ].join('\n');
+  ];
+
+  const pc = summary.prefixCache;
+  if (pc && pc.calls > 0) {
+    const pcPct = (pc.rate * 100).toFixed(1);
+    lines.push(
+      `API 프리픽스 캐시 \`${pcPct}%\` (hit \`${pc.hitTokens.toLocaleString()}\` / miss \`${pc.missTokens.toLocaleString()}\` tok · 평균 입력 \`${pc.avgInput}\` tok)`
+    );
+  }
+
+  return lines.join('\n');
 }
 
 function renderByPair(summary) {

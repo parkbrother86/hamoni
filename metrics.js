@@ -114,12 +114,33 @@ function summarize(events) {
     };
   }
 
+  // DeepSeek prefix-cache split across the calls that actually hit the API.
+  const cacheEvents = apiCalls.filter(
+    (e) => typeof e.ch === 'number' && typeof e.cm === 'number'
+  );
+  let hitTokens = 0;
+  let missTokens = 0;
+  for (const e of cacheEvents) {
+    hitTokens += e.ch;
+    missTokens += e.cm;
+  }
+  const cacheTotal = hitTokens + missTokens;
+
   return {
     total,
     hits,
     misses: apiCalls.length,
     errors,
     hitRate: total > 0 ? hits / total : 0,
+    prefixCache: {
+      calls: cacheEvents.length,
+      hitTokens,
+      missTokens,
+      rate: cacheTotal > 0 ? hitTokens / cacheTotal : 0,
+      avgInput: cacheEvents.length
+        ? Math.round(cacheTotal / cacheEvents.length)
+        : 0,
+    },
     latency: {
       avg,
       p50: percentile(latencies, 0.5),

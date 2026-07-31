@@ -11,6 +11,10 @@ const deepseek = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
 });
 
+// Log the usage object's field names once, so the cache-token field naming can
+// be confirmed against the live API rather than assumed.
+let usageShapeLogged = false;
+
 function buildUserContent(text, sourceLang, targetLang, context) {
   const head = `Source language: ${LANG_LABEL[sourceLang]} (${LANG_NATIVE[sourceLang]})
 Target language: ${LANG_LABEL[targetLang]} (${LANG_NATIVE[targetLang]})
@@ -169,11 +173,24 @@ ${buildUserContent(text, sourceLang, targetLang, context)}
   } finally {
     const elapsed = Date.now() - start;
     stats.recordApiCall(elapsed);
+    // DeepSeek context caching is automatic and prefix-based: the static system
+    // prompt is the cached prefix, so most input tokens should bill as cache
+    // hits. Record the split so the real hit ratio is observable (`/stats`)
+    // instead of assumed.
+    const usage = response?.usage;
+    const ch = usage?.prompt_cache_hit_tokens;
+    const cm = usage?.prompt_cache_miss_tokens;
+    if (usage && !usageShapeLogged) {
+      usageShapeLogged = true;
+      console.log('translator: usage fields =', Object.keys(usage).join(', '));
+    }
     metrics.record({
       src: sourceLang,
       tgt: targetLang,
       hit: 0,
       ms: elapsed,
+      ...(typeof ch === 'number' ? { ch } : {}),
+      ...(typeof cm === 'number' ? { cm } : {}),
       ...(errored ? { err: 1 } : {}),
     });
   }
