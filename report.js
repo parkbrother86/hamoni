@@ -16,25 +16,25 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 
-const {
-  CHANNELS,
-  LANG_BY_CHANNEL_ID,
-  WARN_TEMPLATES,
-  TIMEOUT_TEMPLATES,
-  ESCALATION_NOTE,
-  MODERATION,
-} = require('./config');
+const { LANG_BY_CHANNEL_ID, MODERATION } = require('./config');
 const store = require('./store');
 const rules = require('./rules');
-const strikes = require('./strikes');
 const abuse = require('./abuse');
-const roles = require('./roles');
+const enforce = require('./enforce');
+const reportload = require('./reportload');
 const moderation = require('./moderation');
 const modlog = require('./modlog');
 const stats = require('./stats');
 
-function fill(tpl, values) {
-  return tpl.replace(/\{(\w+)\}/g, (_, k) => (values[k] != null ? values[k] : ''));
+const CONF_ORDER = { high: 3, medium: 2, low: 1 };
+
+// Graduated rollout gate. A confirmed violation only auto-enforces when its
+// rule has graduated out of flag-only AND the judge was confident enough;
+// otherwise it goes to the operator review queue instead of deleting silently.
+function shouldAutoEnforce(verdict) {
+  if (MODERATION.flagOnlyRules.includes(verdict.ruleId)) return false;
+  const need = CONF_ORDER[MODERATION.autoActionMinConfidence] || 3;
+  return (CONF_ORDER[verdict.confidence] || 0) >= need;
 }
 
 // Resolve the reported message (original or relayed copy) to its source origin.
@@ -121,36 +121,6 @@ async function showReportModal(interaction) {
   await interaction.showModal(modal);
 }
 
-// Post a localized, plaintext moderation notice into every channel in that
-// channel's own language. The offender is @mentioned only in their OWN source
-// channel; elsewhere they are named without a ping.
-async function announce(client, { sourceChannelId, authorId, name, ruleId, count, hours }) {
-  const nextIsTimeout = hours === 0 && strikes.timeoutHours(count + 1) > 0;
-
-  await Promise.all(
-    Object.entries(CHANNELS).map(async ([lang, channelId]) => {
-      const rule = rules.getTitle(ruleId, lang);
-      const tpl = hours > 0 ? TIMEOUT_TEMPLATES[lang] : WARN_TEMPLATES[lang];
-      if (!tpl) return;
-
-      const isOwn = channelId === sourceChannelId;
-      const displayName = isOwn ? `<@${authorId}>` : name;
-      let content = fill(tpl, { name: displayName, rule, count, hours });
-      if (nextIsTimeout && ESCALATION_NOTE[lang]) content += ESCALATION_NOTE[lang];
-
-      try {
-        const channel = await client.channels.fetch(channelId);
-        await channel.send({
-          content,
-          allowedMentions: isOwn ? { users: [authorId] } : { parse: [] },
-        });
-      } catch (err) {
-        console.error(`report: announce failed channel=${channelId}`, err?.message || err);
-      }
-    })
-  );
-}
-
 function resultEmbed({ violation, ruleTitle, action, reason }) {
   return new EmbedBuilder()
     .setColor(violation ? 0xe74c3c : 0x2ecc71)
@@ -235,11 +205,14 @@ async function handleReportSubmit(interaction) {
       'user';
     const offenderTag = sourceMessage.author?.tag || offenderName;
 
-    const context = await moderation.gatherContext(sourceChannel, sourceMessage);
+    const ctx = await moderation.gatherContext(sourceChannel, sourceMessage);
+    // A bystander's report carries more signal than one from the person the
+    // reporter was already arguing with.
+    const bystander = !ctx.participants.has(interaction.user.id);
 
     const verdict = await moderation.judge({
       content,
-      context,
+      context: ctx.text,
       authorName: offenderName,
       hint: { reason, suspectedRule },
     });
@@ -253,40 +226,18 @@ async function handleReportSubmit(interaction) {
 
     let action = '없음 (위반 아님)';
     let replyText = '검토 결과: 규정 위반이 아닙니다.';
+    let review = false;
 
-    if (verdict.violation) {
+    if (verdict.violation && shouldAutoEnforce(verdict)) {
       stats.increment('reportViolations');
-      const count = strikes.add(authorId, { ruleId: verdict.ruleId, messageId: sourceMessageId });
-      const hours = strikes.timeoutHours(count);
-
-      let deleted = false;
-      try {
-        await sourceMessage.delete();
-        deleted = true;
-        stats.increment('moderationDeletes');
-      } catch (err) {
-        console.error('report: source delete failed —', err?.message || err);
-      }
-
-      let timedOut = false;
-      if (hours > 0 && member) {
-        try {
-          await member.timeout(hours * 60 * 60 * 1000, `rule ${verdict.ruleId}, strike ${count}`);
-          timedOut = true;
-          stats.increment('timeouts');
-        } catch (err) {
-          console.error('report: timeout failed —', err?.message || err);
-        }
-      }
-
-      await roles.syncWarnRole(member, count);
-      await announce(client, {
-        sourceChannelId,
-        authorId,
-        name: offenderName,
+      const { count, hours, deleted, timedOut } = await enforce.applyStrike(client, {
+        guild: interaction.guild,
+        userId: authorId,
+        displayName: offenderName,
         ruleId: verdict.ruleId,
-        count,
-        hours,
+        messageId: sourceMessageId,
+        sourceChannelId,
+        message: sourceMessage,
       });
 
       const deleteNote = deleted ? '삭제' : '삭제 실패(봇 권한 확인)';
@@ -295,9 +246,30 @@ async function handleReportSubmit(interaction) {
           ? `${deleteNote} + 경고 ${count}회 + 타임아웃 ${hours}시간${timedOut ? '' : ' (권한 부족으로 실패)'}`
           : `${deleteNote} + 경고 ${count}회`;
       replyText = `처리 완료: ${rules.getTitle(verdict.ruleId, 'kr')} 위반 · ${action}`;
+    } else if (verdict.violation) {
+      // Violation found, but the rule is still flag-only or the judge was not
+      // confident. Nothing is deleted or counted — an operator decides.
+      review = true;
+      stats.increment('reviewQueued');
+      action = `운영자 검토 대기 (확신도 ${verdict.confidence})`;
+      replyText =
+        '신고가 접수되어 운영자 검토 대기 중입니다. 확인 후 조치됩니다.';
     }
 
     abuse.setCached(sourceMessageId, replyText);
+
+    // Every report is recorded, cleared ones included — that is what makes a
+    // pattern of "repeatedly reported, never actionable" visible at all.
+    reportload.record({
+      userId: authorId,
+      reporterId: interaction.user.id,
+      messageId: sourceMessageId,
+      verdict: verdict.violation ? 'upheld' : 'cleared',
+      ruleId: verdict.ruleId,
+      suspectedRule: suspectedRule || reason,
+      bystander,
+      excerpt: content,
+    });
 
     modlog.postVerdict(client, {
       reporterTag: interaction.user.tag,
@@ -308,7 +280,18 @@ async function handleReportSubmit(interaction) {
       content,
       verdict,
       action,
+      review,
+      sourceChannelId,
+      sourceMessageId,
     });
+
+    if (reportload.shouldAlert(authorId)) {
+      modlog.postReportLoadAlert(client, {
+        userId: authorId,
+        userTag: offenderTag,
+        summary: reportload.summarize(authorId),
+      });
+    }
 
     await interaction.editReply({
       embeds: [
