@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-30",
+  "version": "2026-08-04",
   "rules": [
     {
       "id": "spam",
@@ -104,12 +104,52 @@
     {
       "id": "targeted_harassment",
       "title": {
-        "kr": "특정인 비난·욕설",
+        "kr": "특정인 비난·인신공격",
         "en": "Targeted harassment",
         "jp": "特定個人への中傷",
         "cn": "针对个人的辱骂"
       },
-      "description": "Naming a specific person to disparage, insult, curse at, or attack them."
+      "description": "Disparaging, mocking, belittling or attacking a specific person. The target does NOT need to be named: it counts if the target is identifiable from a reply, a mention, a quote, the immediately preceding exchange, a repeated referent ('that guy', 'still at it'), or a reference to their profile. Negative verdicts about a person's character, intelligence, mindset or humanity count even when phrased as opinion."
+    },
+    {
+      "id": "mental_health_slur",
+      "title": {
+        "kr": "정신질환 비하",
+        "en": "Mental health slur",
+        "jp": "精神疾患の侮辱",
+        "cn": "精神疾病侮辱"
+      },
+      "description": "Using mental illness or psychiatric conditions as an insult toward a person (e.g. Korean '정병', '정신병자', '환각증세'). Distinct from `discrimination`, which covers attacks on a group. Genuine discussion of mental health is NOT a violation."
+    },
+    {
+      "id": "dehumanizing_language",
+      "title": {
+        "kr": "비인간화 표현",
+        "en": "Dehumanizing language",
+        "jp": "非人間化表現",
+        "cn": "非人化言论"
+      },
+      "description": "Describing a person as sub-human — vermin, an animal, garbage, or something to be discarded (e.g. Korean '벌레', '인간 고쳐 쓰는 게 아니다'). Applies even without profanity."
+    },
+    {
+      "id": "appearance_harassment",
+      "title": {
+        "kr": "외모·사진 비하",
+        "en": "Appearance harassment",
+        "jp": "容姿への中傷",
+        "cn": "外貌羞辱"
+      },
+      "description": "Publicly mocking or expressing disgust at a person's face, body, voice, or profile picture, or demanding they hide it (e.g. Korean '얼굴 좀 가려주세요'). Distinct from `inappropriate_profile`, which is about the profile itself being unsuitable."
+    },
+    {
+      "id": "directed_profanity",
+      "title": {
+        "kr": "특정인 대상 욕설",
+        "en": "Profanity directed at a person",
+        "jp": "特定個人への暴言",
+        "cn": "针对个人的脏话"
+      },
+      "description": "Swearing aimed AT a specific person, as opposed to an exclamation about a situation (e.g. Korean '왜 지랄이세요?' directed at someone). Non-targeted venting like '아 씨발 죽었네' is NOT this rule. When this applies, `targeted_harassment` usually applies as well."
     }
   ]
 }
