@@ -104,8 +104,11 @@ const MODERATION = {
   // stops a burst from firing several in a row.
   campaign: {
     enabled: true,
-    everyMessages: 150, // per channel
-    minIntervalMin: 60,
+    everyMessages: 50, // per channel
+    // Floor, not the primary control: keep it below the time it takes an active
+    // channel to produce everyMessages, or this silently becomes the real
+    // trigger and changing everyMessages does nothing.
+    minIntervalMin: 20,
     quietAfterNoticeMin: 10, // don't stack onto a warning or cooldown nudge
   },
 
