@@ -26,6 +26,7 @@ const corpusLog = require('./corpus_log');
 const contextBuffer = require('./context');
 const moderation = require('./moderation');
 const modlog = require('./modlog');
+const cooldown = require('./cooldown');
 const { MODERATION } = require('./config');
 
 // Passive per-message pre-screen. Fired non-blocking so it never adds latency
@@ -418,6 +419,18 @@ async function handleMessage(message) {
       // Passive moderation pre-screen — non-blocking, flag-only.
       if (hasContent) {
         firePrescreen(message, rendered);
+      }
+
+      // Heated-exchange cooldown. Fault-free by design, so it runs without any
+      // judgment call; fired non-blocking like the pre-screen.
+      try {
+        const heat = cooldown.observe(message);
+        if (heat.heated) {
+          cooldown.nudge(message.client, heat.channelId).catch(() => {});
+          stats.increment('cooldowns');
+        }
+      } catch (err) {
+        console.error('cooldown observe failed', err?.message || err);
       }
     } finally {
       const remaining = (userInFlight.get(userId) || 1) - 1;

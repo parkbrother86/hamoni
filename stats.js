@@ -14,6 +14,8 @@ const counters = {
   timeouts: 0,
   prescreenFlags: 0,
   reviewQueued: 0,
+  mitigated: 0,
+  cooldowns: 0,
 };
 
 const startedAt = Date.now();
