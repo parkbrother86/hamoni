@@ -29,7 +29,7 @@
         "jp": "暴言・わいせつ",
         "cn": "辱骂·色情"
       },
-      "description": "Profanity, vulgar language, or sexual / explicit / NSFW content."
+      "description": "Sexual, explicit or NSFW content, or vulgar language used to degrade someone. Casual expressive profanity aimed at no one is NOT a violation — 'ㅋㅋㅋ 개웃기네 시발' or '아 씨발 죽었네' is ordinary game chat. Swearing aimed AT a person belongs to `directed_profanity` instead."
     },
     {
       "id": "discrimination",
