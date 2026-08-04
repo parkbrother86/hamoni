@@ -4,7 +4,7 @@
 
 const OpenAI = require('openai');
 
-const { MODERATION, CHANNELS } = require('./config');
+const { MODERATION, CHANNELS, LANG_LABEL } = require('./config');
 const rules = require('./rules');
 const stats = require('./stats');
 
@@ -150,16 +150,18 @@ PROVOCATION — mitigation only.
 - If the message is unprovoked aggression, say false.
 
 Output ONLY a JSON object, no prose, no code fence:
-{"violation": boolean, "ruleId": string|null, "severity": "low"|"medium"|"high"|null, "confidence": "high"|"medium"|"low", "provoked": boolean, "reason": string}
+{"violation": boolean, "ruleId": string|null, "severity": "low"|"medium"|"high"|null, "confidence": "high"|"medium"|"low", "provoked": boolean, "reason": string, "reasonLocal": string}
 - "confidence": how certain you are. Use "low" when the verdict depends on an assumption about intent or about who was addressed.
-- "reason": ONE short factual sentence, WRITTEN IN KOREAN (운영자가 읽는 항목이므로 한국어로 작성).`;
+- "reason": ONE short factual sentence in KOREAN — this goes to the moderation log, which stays in one language so operators can scan it.
+- "reasonLocal": the same sentence written in {{REPLY_LANGUAGE}} — this is shown to the reporter. If {{REPLY_LANGUAGE}} is Korean, repeat "reason" verbatim.`;
 
 // Report-triggered authoritative judgment. Returns a normalized verdict:
 // { violation, ruleId, severity, reason }. On any error/parse failure returns
 // a NON-violation (fail-safe: never auto-delete on an uncertain call) with
 // { error: true } so the caller can tell the reporter to retry.
-async function judge({ content, context, authorName, hint }) {
+async function judge({ content, context, authorName, hint, replyLang }) {
   const rulesText = rules.getRulesForPrompt();
+  const replyLanguage = LANG_LABEL[replyLang] || LANG_LABEL.kr;
   const contextText = context && context.trim() ? context.trim() : '(none)';
 
   const hintParts = [];
@@ -184,7 +186,10 @@ ${contextText}${hintText}`;
     response = await deepseek.chat.completions.create({
       model: MODERATION.judgeModel,
       messages: [
-        { role: 'system', content: JUDGE_SYSTEM },
+        {
+          role: 'system',
+          content: JUDGE_SYSTEM.replace(/\{\{REPLY_LANGUAGE\}\}/g, replyLanguage),
+        },
         { role: 'user', content: user },
       ],
       temperature: 0,
@@ -242,13 +247,19 @@ ${contextText}${hintText}`;
     };
   }
 
+  const reason =
+    typeof parsed.reason === 'string' ? parsed.reason.slice(0, 300) : '';
   return {
     violation: parsed.violation,
     ruleId: parsed.violation ? parsed.ruleId : null,
     severity: parsed.severity || null,
     confidence,
     provoked: parsed.provoked === true,
-    reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 300) : '',
+    reason, // Korean — mod-log
+    reasonLocal:
+      typeof parsed.reasonLocal === 'string' && parsed.reasonLocal.trim()
+        ? parsed.reasonLocal.slice(0, 300)
+        : reason, // reporter's language, falls back to the log copy
   };
 }
 
