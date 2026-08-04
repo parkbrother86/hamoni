@@ -9,7 +9,12 @@ const {
 const { snapshot } = require('./stats');
 const { readRecent, summarize } = require('./metrics');
 const { showReportModal, handleReportSubmit } = require('./report');
-const { handleButton, handleStrikesCommand } = require('./modactions');
+const {
+  handleButton,
+  handleEnforceButton,
+  handleEnforceModal,
+  handleStrikesCommand,
+} = require('./modactions');
 
 const statsCommand = new SlashCommandBuilder()
   .setName('stats')
@@ -178,27 +183,45 @@ async function handleInteraction(interaction) {
     return;
   }
 
-  // Report reason modal submitted -> judge + enforce.
   if (interaction.isModalSubmit()) {
-    if (interaction.customId.startsWith('rpt|')) {
+    const id = interaction.customId;
+    // Report reason modal -> judge + enforce.
+    if (id.startsWith('rpt|')) {
       try {
         await handleReportSubmit(interaction);
       } catch (err) {
         console.error('Report submit failed', err?.message || err);
         await safeErrorReply(interaction, '신고 처리 중 오류가 발생했습니다.');
       }
+    // Operator enforcement modal (review item / report-load alert).
+    } else if (id.startsWith('rvm|') || id.startsWith('rlm|')) {
+      try {
+        await handleEnforceModal(interaction);
+      } catch (err) {
+        console.error('Enforce modal failed', err?.message || err);
+        await safeErrorReply(interaction, '집행 처리 중 오류가 발생했습니다.');
+      }
     }
     return;
   }
 
-  // Mod-log recovery buttons.
   if (interaction.isButton()) {
-    if (interaction.customId.startsWith('mod|')) {
+    const id = interaction.customId;
+    // Mod-log recovery buttons.
+    if (id.startsWith('mod|')) {
       try {
         await handleButton(interaction);
       } catch (err) {
         console.error('Mod action failed', err?.message || err);
         await safeErrorReply(interaction, '작업 처리 중 오류가 발생했습니다.');
+      }
+    // Enforcement buttons on review items / report-load alerts.
+    } else if (id.startsWith('rv|') || id.startsWith('rl|')) {
+      try {
+        await handleEnforceButton(interaction);
+      } catch (err) {
+        console.error('Enforce action failed', err?.message || err);
+        await safeErrorReply(interaction, '집행 처리 중 오류가 발생했습니다.');
       }
     }
     return;

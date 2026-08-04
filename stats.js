@@ -13,6 +13,7 @@ const counters = {
   moderationDeletes: 0,
   timeouts: 0,
   prescreenFlags: 0,
+  reviewQueued: 0,
 };
 
 const startedAt = Date.now();
