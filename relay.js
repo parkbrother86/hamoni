@@ -27,6 +27,7 @@ const contextBuffer = require('./context');
 const moderation = require('./moderation');
 const modlog = require('./modlog');
 const cooldown = require('./cooldown');
+const campaign = require('./campaign');
 const { MODERATION } = require('./config');
 
 // Passive per-message pre-screen. Fired non-blocking so it never adds latency
@@ -427,10 +428,22 @@ async function handleMessage(message) {
         const heat = cooldown.observe(message);
         if (heat.heated) {
           cooldown.nudge(message.client, heat.channelId).catch(() => {});
+          campaign.markNotice(message.channel.id);
           stats.increment('cooldowns');
         }
       } catch (err) {
         console.error('cooldown observe failed', err?.message || err);
+      }
+
+      // Volume-triggered norm reminder.
+      try {
+        const entry = campaign.observe(message.channel.id);
+        if (entry) {
+          campaign.post(message.client, message.channel.id, entry).catch(() => {});
+          stats.increment('campaigns');
+        }
+      } catch (err) {
+        console.error('campaign observe failed', err?.message || err);
       }
     } finally {
       const remaining = (userInFlight.get(userId) || 1) - 1;

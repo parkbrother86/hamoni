@@ -15,6 +15,7 @@ const {
 const rules = require('./rules');
 const strikes = require('./strikes');
 const roles = require('./roles');
+const campaign = require('./campaign');
 const stats = require('./stats');
 
 function fill(tpl, values) {
@@ -44,6 +45,8 @@ async function announce(client, { sourceChannelId, authorId, name, ruleId, count
           content,
           allowedMentions: isOwn && authorId ? { users: [authorId] } : { parse: [] },
         });
+        // A norm reminder right after a warning reads as piling on.
+        campaign.markNotice(channelId);
       } catch (err) {
         console.error(`enforce: announce failed channel=${channelId}`, err?.message || err);
       }

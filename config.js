@@ -99,6 +99,16 @@ const MODERATION = {
     'directed_profanity',
   ],
 
+  // Norm-setting reminders, fired by message volume rather than a clock so they
+  // land while people are actually talking. minIntervalMin is a floor that
+  // stops a burst from firing several in a row.
+  campaign: {
+    enabled: true,
+    everyMessages: 150, // per channel
+    minIntervalMin: 60,
+    quietAfterNoticeMin: 10, // don't stack onto a warning or cooldown nudge
+  },
+
   // Blame-free cooldown on heated two-person exchanges. Assigns no fault, so it
   // needs no value judgment about who provoked whom — it just removes the tempo
   // that makes baiting pay.

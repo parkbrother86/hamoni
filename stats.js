@@ -16,6 +16,7 @@ const counters = {
   reviewQueued: 0,
   mitigated: 0,
   cooldowns: 0,
+  campaigns: 0,
 };
 
 const startedAt = Date.now();

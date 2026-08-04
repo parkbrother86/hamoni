@@ -1,0 +1,37 @@
+[
+  {
+    "id": "dont_take_bait",
+    "kr": "🧭 도발적인 글에는 맞대응하지 말고 신고해 주세요. 함께 언쟁하면 도발한 쪽과 같이 제재 대상이 될 수 있습니다.",
+    "en": "🧭 Don't take the bait — report it instead. If you fire back, you can end up sanctioned alongside whoever provoked you.",
+    "jp": "🧭 挑発的な書き込みには言い返さず、通報してください。応戦すると、挑発した側と一緒に処分対象になることがあります。",
+    "cn": "🧭 遇到挑衅不要还击，请举报。跟着争吵可能会和挑衅者一同受到处罚。"
+  },
+  {
+    "id": "disagree_not_attack",
+    "kr": "🗣️ 의견이 달라도 괜찮습니다. 다만 의견이 아니라 사람을 공격하면 규정 위반입니다.",
+    "en": "🗣️ Disagreeing is fine. Attacking the person instead of the argument is not.",
+    "jp": "🗣️ 意見が違うのは問題ありません。ただし主張ではなく人を攻撃すると規約違反になります。",
+    "cn": "🗣️ 意见不同没关系。但攻击的是人而不是观点时，就属于违规。"
+  },
+  {
+    "id": "how_to_report",
+    "kr": "🚨 문제되는 메시지는 **우클릭 → 앱 → 신고**로 접수할 수 있습니다. 사유를 적어주시면 판단에 도움이 됩니다.",
+    "en": "🚨 To report a message: **right-click → Apps → Report**. Adding a reason helps the review.",
+    "jp": "🚨 問題のあるメッセージは **右クリック → アプリ → 通報** から報告できます。理由を書いていただくと判断の助けになります。",
+    "cn": "🚨 举报消息：**右键 → 应用 → 举报**。填写理由有助于判断。"
+  },
+  {
+    "id": "rules_public",
+    "kr": "📋 커뮤니티 규정은 공개되어 있으며, 신고 처리도 그 규정에 따라 이루어집니다. 공지의 규정을 확인해 주세요.",
+    "en": "📋 The community rules are public, and reports are handled according to them. Please check the announcement.",
+    "jp": "📋 コミュニティ規約は公開されており、通報もその規約に沿って処理されます。お知らせをご確認ください。",
+    "cn": "📋 社区规则是公开的，举报也依据这些规则处理。请查看公告。"
+  },
+  {
+    "id": "cool_down",
+    "kr": "☕ 감정이 격해졌다면 잠시 창을 닫아보세요. 대부분의 분쟁은 몇 분 뒤에 보면 대응할 가치가 없습니다.",
+    "en": "☕ If you're getting heated, step away for a minute. Most arguments aren't worth answering once you come back.",
+    "jp": "☕ 感情が高ぶったら、少し画面から離れてみてください。多くの口論は数分後に見ると応じる価値がありません。",
+    "cn": "☕ 如果情绪上来了，先离开一会儿。大多数争吵过几分钟再看就没必要回应了。"
+  }
+]
