@@ -105,7 +105,21 @@ function set(userId, n) {
   return count;
 }
 
-// Timeout duration in hours for a given cumulative strike count.
+// Strikes that still count toward escalation: those inside the expiry window.
+// History is never deleted — only the ladder ignores old entries, so a member
+// is not held at the edge of a timeout forever by a strike from months ago.
+function activeCount(userId) {
+  const entry = store[userId];
+  if (!entry) return 0;
+  const days = MODERATION.strike.strikeExpiryDays;
+  if (!days) return entry.count;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const recent = (entry.history || []).filter((h) => (h.ts || 0) >= cutoff).length;
+  // Entries predating history tracking fall back to the raw count.
+  return Math.min(entry.count, Math.max(recent, 0));
+}
+
+// Timeout duration in hours for a given (active) strike count.
 function timeoutHours(count) {
   const start = MODERATION.strike.timeoutStartStrike;
   if (count < start) return 0;
@@ -119,6 +133,7 @@ module.exports = {
   reset,
   set,
   getHistory,
+  activeCount,
   timeoutHours,
   _reload: load,
 };

@@ -72,6 +72,38 @@ const MODERATION = {
 
   strike: {
     timeoutStartStrike: 3, // strike count at which timeouts begin (3 -> 1h, 4 -> 2h ...)
+    // Strikes older than this stop counting toward escalation (history is kept).
+    // Without expiry a long-standing member who slipped twice months apart sits
+    // permanently one step from a timeout, while a provocateur who never gets a
+    // confirmed violation is unaffected.
+    strikeExpiryDays: 90,
+  },
+
+  // Graduated rollout. A verdict only auto-enforces when its rule is not
+  // flag-only AND its confidence clears the bar; everything else goes to the
+  // mod-log review queue with enforcement buttons. Newly added rules start
+  // flag-only so a broadened rule sheet cannot silently delete real
+  // conversation — remove ids here once their false-positive rate is known.
+  autoActionMinConfidence: 'high', // 'high' | 'medium' | 'low'
+  flagOnlyRules: [
+    'mental_health_slur',
+    'dehumanizing_language',
+    'appearance_harassment',
+    'directed_profanity',
+  ],
+
+  // Report accumulation: reports received regardless of verdict. Operator
+  // visibility ONLY — never drives an automatic action, and is never shown to
+  // the judge (that would let accusations sway verdicts, i.e. brigading).
+  reportLoad: {
+    windowDays: 7,
+    alertDistinctReporters: 3, // distinct reporters -> alert
+    alertBystanderReporters: 2, // uninvolved third parties -> stronger signal
+    watchDistinctReporters: 2, // lowered threshold once flagged for watching
+    burstWindowMin: 30, // reports clustered this tightly look coordinated
+    ignoreDays: 30, // '무시' suppression window
+    historyMaxDays: 90,
+    excerptMaxLength: 100,
   },
 
   // Optional public "warning count" role tags shown next to the offender's name.
