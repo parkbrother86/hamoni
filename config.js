@@ -85,12 +85,33 @@ const MODERATION = {
   // flag-only so a broadened rule sheet cannot silently delete real
   // conversation — remove ids here once their false-positive rate is known.
   autoActionMinConfidence: 'high', // 'high' | 'medium' | 'low'
+
+  // A violation that reads as a reaction to provocation is deleted but accrues
+  // no strike (unless severity is high). This is the deliberate asymmetry: the
+  // system declines to convict the provoker — mislabelling an unpopular voice
+  // as a troll is far costlier than letting one mild reaction pass — and
+  // instead simply stops over-punishing whoever took the bait.
+  mitigateProvoked: true,
   flagOnlyRules: [
     'mental_health_slur',
     'dehumanizing_language',
     'appearance_harassment',
     'directed_profanity',
   ],
+
+  // Blame-free cooldown on heated two-person exchanges. Assigns no fault, so it
+  // needs no value judgment about who provoked whom — it just removes the tempo
+  // that makes baiting pay.
+  cooldown: {
+    enabled: true,
+    windowSec: 120,
+    minExchanges: 8, // combined messages from the pair inside the window
+    minEach: 3, // each of the two must be this active (rules out a monologue)
+    minAlternations: 4, // turn changes required — a real exchange, not a spammer
+    nudgeCooldownMin: 15,
+    slowmodeSec: 0, // >0 applies channel slowmode; off by default (hits bystanders)
+    slowmodeDurationMin: 5,
+  },
 
   // Report accumulation: reports received regardless of verdict. Operator
   // visibility ONLY — never drives an automatic action, and is never shown to

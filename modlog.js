@@ -146,6 +146,7 @@ async function postVerdict(client, {
       { name: '규칙', value: verdict.ruleId || '—', inline: true },
       { name: '심각도', value: verdict.severity || '—', inline: true },
       { name: '확신도', value: verdict.confidence || '—', inline: true },
+      { name: '도발 정황', value: verdict.provoked ? '있음 (감경 사유)' : '없음', inline: true },
       { name: '조치', value: action || '—', inline: true },
       { name: '판단 사유', value: (verdict.reason || '—').slice(0, 1024) },
       { name: '신고자 사유', value: (reporterReason || '—').slice(0, 1024) },

@@ -228,7 +228,30 @@ async function handleReportSubmit(interaction) {
     let replyText = '검토 결과: 규정 위반이 아닙니다.';
     let review = false;
 
-    if (verdict.violation && shouldAutoEnforce(verdict)) {
+    // Provoked reaction: take the message down but do not let it accrue toward
+    // a timeout. Deliberately asymmetric — erring toward leniency costs one
+    // mild violation, whereas erring toward accusing the other party of baiting
+    // would brand a possibly-innocent minority voice as a troll.
+    const mitigate =
+      verdict.violation &&
+      MODERATION.mitigateProvoked &&
+      verdict.provoked &&
+      verdict.severity !== 'high';
+
+    if (verdict.violation && mitigate) {
+      stats.increment('mitigated');
+      let deleted = false;
+      try {
+        await sourceMessage.delete();
+        deleted = true;
+        stats.increment('moderationDeletes');
+      } catch (err) {
+        console.error('report: source delete failed —', err?.message || err);
+      }
+      action = `${deleted ? '삭제' : '삭제 실패(봇 권한 확인)'} · 도발 정황으로 경고 미부여`;
+      replyText =
+        '해당 메시지는 삭제되었습니다. 다만 도발에 대한 반응으로 판단되어 경고는 부과하지 않았습니다.';
+    } else if (verdict.violation && shouldAutoEnforce(verdict)) {
       stats.increment('reportViolations');
       const { count, hours, deleted, timedOut } = await enforce.applyStrike(client, {
         guild: interaction.guild,
