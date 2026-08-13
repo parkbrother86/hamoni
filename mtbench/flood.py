@@ -48,7 +48,7 @@ LANG_NAME = {"kr": "Korean", "en": "English", "jp": "Japanese", "cn": "Chinese"}
 TRI_TAG = {"kr": "ko", "en": "en", "jp": "ja", "cn": "zh"}
 
 
-def build_payload(args, text, idx):
+def build_payload(args, text, idx, tgt=None):
     """모델별 프롬프트 어댑터. 번역 전용 모델은 각자 고유 형식을 쓴다.
 
     ⚠️ chat template 이 있는 모델(Tri-1.8B 등)에 raw /completions 를 쓰면 EOS 가
@@ -56,7 +56,8 @@ def build_payload(args, text, idx):
     부풀어 측정이 무의미해진다. 기본값을 chat 으로 두고 `--api` 로만 바꾼다.
     (2026-08-14 실측: raw 3.3 msg/s vs chat 20+ msg/s)
     """
-    src, tgt = args.src, args.tgt
+    src = args.src
+    tgt = tgt or args.tgt
     common = {"model": args.model, "max_tokens": args.max_tokens, "temperature": 0}
 
     if args.prompt_style == "tri":
@@ -191,9 +192,9 @@ def fmt_metrics(m):
     return "    서버: " + " | ".join(parts) + "  (평균/최대)"
 
 
-async def one_request(client, args, idx, out):
+async def one_request(client, args, idx, out, tgt=None):
     text = LINES[idx % len(LINES)]
-    path, payload = build_payload(args, text, idx)
+    path, payload = build_payload(args, text, idx, tgt)
     t0 = time.perf_counter()
     try:
         r = await client.post(args.url.rstrip("/") + path, json=payload)
@@ -230,18 +231,34 @@ def report(results, wall_s, label):
 
 
 async def closed_loop(client, args, concurrency, duration, start_idx):
-    """동시 C건을 항상 유지 — 하나 끝나면 즉시 다음 발사. 처리량 상한 측정."""
+    """동시 C건을 항상 유지 — 하나 끝나면 즉시 다음 발사. 처리량 상한 측정.
+
+    --fanout 지정 시 '1건'의 단위가 **입력 채팅**이 된다: 채팅 하나가 N개
+    타겟으로 동시 번역되고, **N개가 전부 끝나야** 그 채팅이 완료된다(실제
+    릴레이 형태). 이 경우 concurrency = 동시 채팅 수이고 실제 API 요청은
+    그 N배가 된다.
+    """
     results, counter, deadline = [], start_idx, time.perf_counter() + duration
+    targets = args.fanout.split(",") if args.fanout else None
+    chats_done = 0
 
     async def worker():
-        nonlocal counter
+        nonlocal counter, chats_done
         while time.perf_counter() < deadline:
             i, counter = counter, counter + 1
-            await one_request(client, args, i, results)
+            if targets:
+                # 한 채팅 = N개 타겟 동시 발사, 전부 끝나야 완료
+                await asyncio.gather(*[
+                    one_request(client, args, i, results, tgt=t) for t in targets
+                ])
+                chats_done += 1
+            else:
+                await one_request(client, args, i, results)
 
     t0 = time.perf_counter()
     await asyncio.gather(*[worker() for _ in range(concurrency)])
-    return results, time.perf_counter() - t0
+    wall = time.perf_counter() - t0
+    return results, wall, chats_done
 
 
 async def open_loop(client, args, rps, duration):
@@ -291,6 +308,8 @@ async def main():
     ap.add_argument("--max-concurrency", type=int, default=256, help="ramp 상한")
     ap.add_argument("--src", default="kr", choices=list(LANG_NAME))
     ap.add_argument("--tgt", default="en", choices=list(LANG_NAME))
+    ap.add_argument("--fanout", help="예: en,jp,cn — 채팅 1건을 이 타겟들로 동시 번역하고 "
+                                     "전부 끝나야 완료로 센다. concurrency 단위가 '동시 채팅'이 된다")
     ap.add_argument("--max-tokens", type=int, default=64)
     ap.add_argument("--break-p95", type=float, default=1500, help="SLA — 이 p95(ms) 넘으면 중단")
     ap.add_argument("--break-err", type=float, default=0.05)
@@ -319,11 +338,16 @@ async def main():
             print("SLA 이탈(p95 > %.0fms) 또는 에러율 %.0f%% 초과 시 중단\n" % (args.break_p95, args.break_err * 100))
             best, idx, c = None, 0, 1
             while c <= args.max_concurrency:
-                res, wall = await closed_loop(client, args, c, args.duration, idx)
+                res, wall, chats = await closed_loop(client, args, c, args.duration, idx)
                 idx += len(res)
-                s = report(res, wall, f"  동시 {c:>4}")
+                label = f"  동시채팅 {c:>4}" if args.fanout else f"  동시 {c:>4}"
+                s = report(res, wall, label)
                 if s is None:
                     break
+                if args.fanout:
+                    n = len(args.fanout.split(","))
+                    s["chat_tps"] = chats / wall
+                    print(f"    → 입력 채팅 {s['chat_tps']:.1f}/s (fan-out {n} = API {s['tps']:.1f}/s)")
                 if s["p95"] > args.break_p95 or s["err"] > args.break_err:
                     print(f"\n→ 한계 도달 (동시 {c}). SLA 내 최대: {best}")
                     break
@@ -339,8 +363,10 @@ async def main():
 
         elif args.mode == "sustain":
             print(f"지속 부하 (동시 {args.concurrency}, {args.duration}초)")
-            res, wall = await closed_loop(client, args, args.concurrency, args.duration, 0)
-            report(res, wall, f"  동시 {args.concurrency:>4}")
+            res, wall, chats = await closed_loop(client, args, args.concurrency, args.duration, 0)
+            s0 = report(res, wall, f"  동시 {args.concurrency:>4}")
+            if args.fanout and s0:
+                print(f"    → 입력 채팅 {chats / wall:.1f}/s (fan-out {len(args.fanout.split(','))})")
             half = len(res) // 2
             if half > 10:
                 # 전반/후반 비교 — 시간에 따른 열화 감지
