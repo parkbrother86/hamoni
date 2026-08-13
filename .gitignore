@@ -31,3 +31,7 @@ ecosystem.config.local.js
 *.md
 !README.md
 !mtbench/*.md
+
+# Python
+__pycache__/
+*.pyc
