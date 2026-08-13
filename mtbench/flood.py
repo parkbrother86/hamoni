@@ -15,8 +15,12 @@
     python flood.py --mode open --rps 100 --duration 30 ...
 
 두 모드의 의미가 다르다:
-  closed-loop(ramp/sustain) = 동시 접속자 C명이 쉬지 않고 요청 → **처리량 상한**
-  open-loop(open)           = 도착률 고정, 서버가 못 따라가면 큐 폭발 → **한계 도착률**
+  closed-loop(ramp/sustain) = **동시 처리 슬롯 C개**를 항상 채운 상태 → **처리량 상한**
+  open-loop(open/sweep)     = 도착률 고정, 서버가 못 따라가면 큐 폭발 → **한계 도착률**
+
+⚠️ --concurrency C 는 **동시 처리 슬롯 수(in-flight 제한)** 다.
+   유저 수도, 배치 크기도 아니다. "채팅은 무한히 밀려오는데 동시에 C건까지만
+   GPU 에 물린다"는 뜻. 자세한 정의와 흔한 오해는 mtbench/CAPACITY.md.
 """
 
 import argparse
@@ -302,14 +306,16 @@ async def main():
     ap.add_argument("--gpu-cmd",
                     default='wsl -d Ubuntu -e nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader',
                     help="GPU 사용률 표본 명령 (빈 문자열이면 비활성)")
-    ap.add_argument("--concurrency", type=int, default=32, help="sustain 모드 동시성")
+    ap.add_argument("--concurrency", type=int, default=32,
+                    help="sustain 모드 동시 처리 슬롯 수(in-flight 제한). 유저 수/배치 크기 아님 — CAPACITY.md §1")
     ap.add_argument("--rps", type=int, default=100, help="open 모드 초당 발사수")
     ap.add_argument("--duration", type=int, default=15, help="단계별 지속 시간(초)")
     ap.add_argument("--max-concurrency", type=int, default=256, help="ramp 상한")
     ap.add_argument("--src", default="kr", choices=list(LANG_NAME))
     ap.add_argument("--tgt", default="en", choices=list(LANG_NAME))
     ap.add_argument("--fanout", help="예: en,jp,cn — 채팅 1건을 이 타겟들로 동시 번역하고 "
-                                     "전부 끝나야 완료로 센다. concurrency 단위가 '동시 채팅'이 된다")
+                                     "전부 끝나야 완료로 센다. 이때 슬롯 1개 = 채팅 1건 "
+                                     "= API 요청 N개")
     ap.add_argument("--max-tokens", type=int, default=64)
     ap.add_argument("--break-p95", type=float, default=1500, help="SLA — 이 p95(ms) 넘으면 중단")
     ap.add_argument("--break-err", type=float, default=0.05)

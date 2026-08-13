@@ -25,6 +25,9 @@ ecosystem.config.local.js
 # Project-local
 *.local.json
 
-# Markdown — only README.md is tracked
+# Markdown — only README.md is tracked.
+# Exception: mtbench/ is the self-hosted-serving handoff for the GPU box, so
+# its docs must travel with the repo. Everything under bench/ stays local.
 *.md
 !README.md
+!mtbench/*.md
