@@ -1,5 +1,8 @@
 # mtbench — 검증된 버전 (2026-08-14, Windows/py3.13 + CUDA 12)
 ctranslate2>=4.8
+# 트랙 B (decoder LLM, GGUF) — CUDA 휠: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+llama-cpp-python[server]
+nvidia-cuda-runtime-cu12
 transformers>=5.0
 sentencepiece
 huggingface_hub

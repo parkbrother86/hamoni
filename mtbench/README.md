@@ -221,16 +221,88 @@ vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-u
 `--max-model-len 1024` 로 충분하다 (V10 같은 긴 시스템 프롬프트가 없는 번역
 전용 모델이라 컨텍스트가 짧다) — KV 캐시가 남아 동시 슬롯을 많이 딸 수 있다.
 
+## 트랙 B 실측 — 2026-08-14, 개발기 4080 Laptop 12GB (llama.cpp Q4_K_M)
+
+### 품질 (18케이스, DeepSeek V10 참조 대비)
+
+| 케이스 | DeepSeek(참조) | **Tri-1.8B** | **TranslateGemma-4B** | NLLB-600M |
+|---|---|---|---|---|
+| 어제 던전 즐기셨나요 (존댓말) | Did you enjoy the dungeon yesterday? | **동일** ✅ | Did you enjoy playing the dungeon yesterday? ✅ | Did you enjoy the dance last night? ❌ |
+| 한국인 아니신가 | You're not Korean? | Aren't you Korean? ✅ | Are you not Korean? ✅ | You're not Korean. (평서) ❌ |
+| プレイされてましたか? | Were you playing? | **동일** ✅ | — | Have you played it? △ |
+| 待ってます (자기표현) | I'm waiting | **동일** ✅ | I'm waiting. ✅ | I'm waiting for you. △ |
+| 낚여버렸네요 ㅋㅋ | I got tricked lol | I got caught. lol ✅ | I was completely fooled! ㅋㅋㅋ ✅ | I'm out of fish. ❌ |
+| **ㄱㄱ** | GG | See you. ❌ | **GG** ✅ | A. ❌ |
+| anyone up for a raid tonight? | 오늘 밤 레이드 갈 사람 있나요? | 오늘밤 습격할 사람? △ | **오늘 밤 함께 레이드하러 갈 사람 있나요?** ✅ | 오늘 밤 급습을 하고 싶은 사람이 있나요? △ |
+| 보스 누가 탱? → jp | ボス、誰がタンクする？ | ボス、誰がタンク？ ✅ | ボスは誰がサポート…❌ | ボス,誰がタン? △ |
+| **리젠 언제임?** | When's the respawn? | When is the reunion? ❌ | When is the meeting scheduled? ❌ | When is Regen? ❌ |
+| **막공 몇 시 출발?** | (pickup raid) | curtain go up ❌ | final performance ❌ | What time is it? ❌ |
+| **반지 먹었어요** | got that ring | ate the ring ❌ | ate that ring ❌ | ate that ring ❌ |
+| 今晚打副本吗? | running the dungeon | make a copy ❌ | play a game ❌ | play a copy ❌ |
+
+**판정**: 두 모델 모두 **일반 대화체는 DeepSeek 급**(존댓말→you, 자기표현→I 를
+자연히 이행 — NLLB 가 못 하던 것). 그러나 **게임 슬랭/전문용어는 셋 다 전멸**
+(리젠·막공·먹다·부본·탱). TranslateGemma 가 `ㄱㄱ`→GG, en→kr 자연스러움에서
+앞서고, Tri-1.8B 가 kr→jp 와 간결성에서 앞선다.
+→ **G1 게이트: raw 로는 불합격. 게임 슬랭 파인튜닝이 전제 조건.**
+
+### 마스크 생존 (숫자 심화 18케이스)
+
+| | Tri-1.8B | TranslateGemma | NLLB-600M |
+|---|---:|---:|---:|
+| 숫자 심화 생존 | **15/18** | 14/18 | **16/18** |
+| `101` (기본 6문장) | 6/6 | — | 6/6 |
+| 6자리 `472938` | 대부분 ✅ | 대부분 ✅ | 12/12 ✅ |
+
+실패 유형이 공통적이다 — **시각(時刻)으로 재해석**: `83051`→"8:30", `9204817`
+→"9:20:48:17". 4~6자리는 안전, **7자리 이상은 금지**. 1~2자리는 단어로
+spell-out(전 모델 공통).
+
+### 속도 (단일 스트림, 인프로세스)
+
+| 모델 | p50 | 순차 처리량 |
+|---|---:|---:|
+| Tri-1.8B Q4_K_M | **42ms** | 22.3 msg/s |
+| TranslateGemma-4B Q4_K_M | ~106ms | ~9.4 msg/s |
+| (참조) DeepSeek API | 637ms | — |
+
+**단일 호출 latency 는 DeepSeek 의 1/15 ~ 1/6.** SLA 여유가 압도적이다.
+
+### ⚠️ 단건 동시성 — 이번 스택으로는 측정 불가 (서빙 계층 한계)
+
+`flood.py --mode ramp` (Tri-1.8B, llama-cpp-python 서버):
+
+```
+동시  1   19.4/s  p50   51ms
+동시  2   20.6/s  p50   96ms
+동시  4   20.1/s  p50  197ms
+동시  8   20.7/s  p50  383ms
+동시 16   20.4/s  p50  782ms
+동시 32   20.0/s  p50 1585ms
+```
+
+**처리량이 완전히 평평하고 latency 만 동시성에 정비례** = 교과서적 직렬화
+패턴. 인프로세스 순차(22.3/s)와 사실상 같은 값이므로 **동시성 이득 0**.
+이는 GPU 한계가 아니라 **llama-cpp-python 서버가 모델 락으로 요청을 직렬
+처리**하기 때문이다 (같은 GPU 가 seq2seq 배치에서 798 msg/s 를 냈다).
+
+→ **진짜 단건 동시 처리량은 vLLM(continuous batching) 또는 llama.cpp 네이티브
+`llama-server -np N` 으로 재야 한다.** 이 개발기는 WSL1(CUDA 미지원)이라
+vLLM 불가 — **3060 Ti 서버(Linux)에서 측정할 것.** 위 20 msg/s 는 하한선일 뿐,
+상한 아님.
+
 ## 서버에서 할 일 (TODO)
 
-**트랙 B (우선 — 단건 동시성이 핵심 질문):**
-- [ ] `Tri-1.8B-Translation` 서버 기동(vLLM 또는 llama.cpp) → `flood.py --mode ramp`
-      로 **SLA 내 최대 단건 처리량** 확보. 우리 4개 언어 정확 일치 + Apache 2.0 이라 1순위
-- [ ] 이어서 `--mode sustain` 으로 그 부하의 지속 가능성, `--mode open` 으로 한계 도착률
-- [ ] 같은 모델 품질 — 프롬프트 어댑터 붙여 `quality.js`, 또는 수동 케이스로
-      §초기실측의 18케이스(슬랭/존댓말/마스크) 재현 비교
-- [ ] `translategemma-4b-it` 동일 절차. **Gemma Terms 상용 조건 법무 확인 선행**
-- [ ] 두 모델 단건 RPS/p95/품질 비교표 → 이 파일에 추가
+**트랙 B — 품질/마스크/단일 latency 는 개발기에서 완료(위 실측). 남은 것:**
+- [ ] **★ vLLM 으로 단건 동시 처리량 측정** — 개발기는 WSL1 이라 못 했다.
+      서버(Linux)에서 `vllm serve trillionlabs/Tri-1.8B-Translation
+      --max-model-len 1024` → `python flood.py --mode ramp --prompt-style tri`.
+      **이번 실험에서 유일하게 미해결로 남은 숫자.** 20 msg/s 는 직렬 서버의
+      하한선일 뿐이다
+- [ ] 대안 확인: llama.cpp 네이티브 `llama-server -np 16` (vLLM 안 되면)
+- [ ] 3060 Ti 에서 위 품질/latency 재현 확인 (4080 대비 연산량 낮음 — latency 상승폭 확인)
+- [ ] `translategemma-4b-it` 채택 검토 시 **Gemma Terms 상용 조건 법무 확인 선행**
+      (원본 HF repo 는 게이트 — 약관 동의 필요. GGUF 변환본은 열려 있음)
 
 **트랙 A (seq2seq):**
 - [ ] `madlad3b` 전체 3스테이지 — Apache 2.0 후보의 raw 품질
@@ -248,8 +320,26 @@ vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-u
 - `bench_mt.py` — 트랙 A(seq2seq) 3스테이지 하네스: quality / mask / speed.
   모델 자동 다운로드, CUDA→CPU 폴백, Windows GPU DLL 경로 처리, UTF-8 출력.
 - `flood.py` — **단건 동시성 하네스** (트랙 B 및 모든 OpenAI 호환 엔드포인트).
-  ramp / sustain / open 3모드. 모델별 프롬프트 어댑터(`--prompt-style`).
+  ramp / sustain / open 3모드. 모델별 프롬프트 어댑터(`--prompt-style`),
+  `--api chat|completions`.
+- `quality_llm.py` — 트랙 B 품질/마스크 (GGUF 인프로세스). `bench_mt.py` 와
+  **같은 케이스**를 써서 트랙 A 와 직접 비교된다.
+- `serve_gguf.py` — GGUF 를 OpenAI 호환 서버로 기동 (flood.py 부하 대상)
+- `cuda_path.py` — Windows 에서 pip NVIDIA 런타임 DLL 경로 등록 (공용 헬퍼)
 - `requirements.txt` — 검증된 버전 (Windows py3.13 + CUDA 12 에서 확인)
+
+### 함정 (실측으로 확인된 것 — 서버에서도 동일하게 밟는다)
+
+1. **chat template 모델에 raw completions 금지.** Tri-1.8B 는 ChatML 템플릿을
+   갖고 있어서, 모델 카드의 프롬프트 문자열을 `/completions` 로 보내면 EOS 가
+   안 걸려 무한 반복한다. 측정값도 6배 왜곡됐다(3.3 → 20 msg/s).
+   `flood.py --api chat`(기본값) 유지할 것.
+2. **TranslateGemma 는 OpenAI 표준 형식이 아니다.** chat template 이 구조화
+   content 를 강제한다:
+   `{"type":"text","source_lang_code":"ko","target_lang_code":"en","text":"..."}`.
+   평문 문자열을 보내면 ValueError. 범용 클라이언트 연동 시 어댑터 필요.
+3. **Windows CUDA DLL** — `ctranslate2`/`llama_cpp` 는 plain LoadLibrary 라
+   `cuda_path` 를 먼저 import 해야 한다. Linux 는 불필요.
 
 > 개발기 로컬에는 `bench/`(디스코드 봇용 JS 하네스 + 비용/설계 문서)가 있지만
 > **`.git/info/exclude` 로 추적 제외라 서버 clone 에는 없다.** 서버에서 필요한

@@ -49,7 +49,13 @@ TRI_TAG = {"kr": "ko", "en": "en", "jp": "ja", "cn": "zh"}
 
 
 def build_payload(args, text, idx):
-    """모델별 프롬프트 어댑터. 번역 전용 모델은 각자 고유 형식을 쓴다."""
+    """모델별 프롬프트 어댑터. 번역 전용 모델은 각자 고유 형식을 쓴다.
+
+    ⚠️ chat template 이 있는 모델(Tri-1.8B 등)에 raw /completions 를 쓰면 EOS 가
+    안 걸려 max_tokens 를 끝까지 소모하며 반복 출력한다 — latency 가 몇 배로
+    부풀어 측정이 무의미해진다. 기본값을 chat 으로 두고 `--api` 로만 바꾼다.
+    (2026-08-14 실측: raw 3.3 msg/s vs chat 20+ msg/s)
+    """
     src, tgt = args.src, args.tgt
     common = {"model": args.model, "max_tokens": args.max_tokens, "temperature": 0}
 
@@ -59,21 +65,24 @@ def build_payload(args, text, idx):
             f"Translate the following {LANG_NAME[src]} text into {LANG_NAME[tgt]}:\n"
             f"{text} <{TRI_TAG[tgt]}>"
         )
-        return "/completions", {**common, "prompt": prompt}
-
-    if args.prompt_style == "gemma":
-        # TranslateGemma: source/target 언어 코드 지정 형식
+    elif args.prompt_style == "gemma":
+        # TranslateGemma: 타겟 언어 태그 접두
         prompt = f"<2{TRI_TAG[tgt]}> {text}"
-        return "/completions", {**common, "prompt": prompt}
+    else:  # generic chat
+        prompt = None
 
-    # generic chat — 범용 instruct 모델용
-    return "/chat/completions", {
-        **common,
-        "messages": [
-            {"role": "system", "content": f"Translate the user message into {LANG_NAME[tgt]}. Output only the translation."},
-            {"role": "user", "content": text},
-        ],
-    }
+    if prompt is None:
+        return "/chat/completions", {
+            **common,
+            "messages": [
+                {"role": "system", "content": f"Translate the user message into {LANG_NAME[tgt]}. Output only the translation."},
+                {"role": "user", "content": text},
+            ],
+        }
+
+    if args.api == "completions":
+        return "/completions", {**common, "prompt": prompt}
+    return "/chat/completions", {**common, "messages": [{"role": "user", "content": prompt}]}
 
 
 async def one_request(client, args, idx, out):
@@ -160,6 +169,8 @@ async def main():
     ap.add_argument("--url", default="http://localhost:8000/v1", help="OpenAI 호환 엔드포인트")
     ap.add_argument("--model", required=True)
     ap.add_argument("--prompt-style", default="tri", choices=["tri", "gemma", "chat"])
+    ap.add_argument("--api", default="chat", choices=["chat", "completions"],
+                    help="chat 권장 — chat template 모델에 raw completions 를 쓰면 반복 출력으로 latency 왜곡")
     ap.add_argument("--mode", default="ramp", choices=["ramp", "sustain", "open"])
     ap.add_argument("--concurrency", type=int, default=32, help="sustain 모드 동시성")
     ap.add_argument("--rps", type=int, default=100, help="open 모드 초당 발사수")
