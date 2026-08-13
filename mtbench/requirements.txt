@@ -6,3 +6,4 @@ huggingface_hub
 # GPU 런타임 (pip 휠로 배달 — 시스템 CUDA 툴킷 설치 불필요, 드라이버만 필요)
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
+httpx
