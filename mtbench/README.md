@@ -268,7 +268,44 @@ spell-out(전 모델 공통).
 
 **단일 호출 latency 는 DeepSeek 의 1/15 ~ 1/6.** SLA 여유가 압도적이다.
 
-### ⚠️ 단건 동시성 — 이번 스택으로는 측정 불가 (서빙 계층 한계)
+### ★ 단건 동시성 — vLLM 실측 (2026-08-14, 4080 Laptop 12GB, Tri-1.8B bf16)
+
+`vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-utilization 0.85`
+(vLLM 0.9.2, WSL2). `flood.py --mode ramp --prompt-style tri`:
+
+| 동시 | 처리량 | p50 | p95 | 판정 |
+|---:|---:|---:|---:|---|
+| 1 | 10.8/s | 93ms | 116ms | |
+| 2 | 20.4/s | 98ms | 121ms | 선형 |
+| 4 | 38.8/s | 102ms | 128ms | 선형 |
+| 8 | 74.0/s | 106ms | 136ms | 선형 |
+| 16 | 135.5/s | 118ms | 147ms | 선형 (latency 거의 불변!) |
+| **32** | **205.5/s** | **141ms** | **262ms** | ★ SLA 내 최대 |
+| 64 | 90.8/s | 175ms | 2836ms | 붕괴 — KV 캐시 포화 |
+
+**★ SLA(p95<1.5s) 내 최대 단건 처리량 = 205 msg/s (동시 32, p95 262ms).**
+
+continuous batching 이 확실히 작동한다 — 동시 1→32 에서 처리량이 **19배**
+오르는 동안 p50 은 93→141ms 로 거의 안 움직인다. llama-cpp-python(20/s 고정)
+대비 **10배**. 동시 64 에서 급락하는 것은 `max-model-len 1024` × 동시 64 가
+KV 캐시를 넘겨 preemption 이 발생하기 때문 — 서버에서 8GB 면 이 한계가 더
+낮으므로 동시성 상한을 보수적으로 잡을 것.
+
+**지속 가능성** (`--mode sustain --concurrency 32 --duration 45`):
+전반부 168.3/s p95 326ms · 후반부 168.3/s p95 549ms — **처리량은 완전 유지**,
+p95 만 소폭 상승. 45초 지속 부하에서 큐 적체 없음(에러 0).
+
+**한계 도착률** (`--mode open`, 백프레셔 없음):
+
+| 도착률 | 처리율 | p95 | in-flight | 판정 |
+|---:|---:|---:|---:|---|
+| 60/s | 59.7/s | 274ms | 29 | ✅ 소화 |
+| 90/s | 89.6/s | 138ms | 15 | ✅ 소화 |
+| 150/s | 99.5/s | 11.2s | 752 | ⚠️ 큐 폭발 |
+
+→ **안전 운영선 ~90 msg/s (도착률 기준), 버스트 상한 ~205 msg/s (동시 32).**
+
+### 참고 — llama-cpp-python 서버는 직렬 처리 (같은 모델, 같은 GPU)
 
 `flood.py --mode ramp` (Tri-1.8B, llama-cpp-python 서버):
 
@@ -283,26 +320,41 @@ spell-out(전 모델 공통).
 
 **처리량이 완전히 평평하고 latency 만 동시성에 정비례** = 교과서적 직렬화
 패턴. 인프로세스 순차(22.3/s)와 사실상 같은 값이므로 **동시성 이득 0**.
-이는 GPU 한계가 아니라 **llama-cpp-python 서버가 모델 락으로 요청을 직렬
-처리**하기 때문이다 (같은 GPU 가 seq2seq 배치에서 798 msg/s 를 냈다).
+GPU 한계가 아니라 **llama-cpp-python 서버가 모델 락으로 요청을 직렬 처리**
+하기 때문 — 같은 모델·같은 GPU 에서 vLLM 은 205/s 를 냈다(위). **10배 차이.**
 
-→ **진짜 단건 동시 처리량은 vLLM(continuous batching) 또는 llama.cpp 네이티브
-`llama-server -np N` 으로 재야 한다.** 이 개발기는 WSL1(CUDA 미지원)이라
-vLLM 불가 — **3060 Ti 서버(Linux)에서 측정할 것.** 위 20 msg/s 는 하한선일 뿐,
-상한 아님.
+→ 교훈: **서빙 스택 선택이 모델 선택만큼 중요하다.** GGUF/llama-cpp-python 은
+품질·단일 latency 확인용으로만 쓰고, 처리량 판단은 반드시 vLLM 으로 할 것.
 
 ## 서버에서 할 일 (TODO)
 
-**트랙 B — 품질/마스크/단일 latency 는 개발기에서 완료(위 실측). 남은 것:**
-- [ ] **★ vLLM 으로 단건 동시 처리량 측정** — 개발기는 WSL1 이라 못 했다.
-      서버(Linux)에서 `vllm serve trillionlabs/Tri-1.8B-Translation
-      --max-model-len 1024` → `python flood.py --mode ramp --prompt-style tri`.
-      **이번 실험에서 유일하게 미해결로 남은 숫자.** 20 msg/s 는 직렬 서버의
-      하한선일 뿐이다
-- [ ] 대안 확인: llama.cpp 네이티브 `llama-server -np 16` (vLLM 안 되면)
-- [ ] 3060 Ti 에서 위 품질/latency 재현 확인 (4080 대비 연산량 낮음 — latency 상승폭 확인)
-- [ ] `translategemma-4b-it` 채택 검토 시 **Gemma Terms 상용 조건 법무 확인 선행**
-      (원본 HF repo 는 게이트 — 약관 동의 필요. GGUF 변환본은 열려 있음)
+**트랙 B — 개발기(4080)에서 품질/마스크/latency/동시성 전부 측정 완료. 남은 것:**
+- [ ] **3060 Ti(8GB)에서 재측정** — 4080 12GB 대비 VRAM 이 작아 **KV 캐시가
+      먼저 한계**다. 동시 64 붕괴 지점이 더 낮게 올 것이므로 `--mode ramp` 로
+      그 지점을 다시 찾을 것. 절차는 아래 §서버 재현 그대로
+- [ ] `translategemma-4b-it` 동시성 (4B 라 8GB 에서 KV 여유가 더 빠듯). 채택
+      검토 시 **Gemma Terms 상용 조건 법무 확인 선행** (원본 HF repo 는 게이트)
+- [ ] 게임 슬랭 대응 설계 — glossary 강제 치환 + 캐시 승격으로 흡수(사용자
+      방향, 2026-08-14). 봇의 `glossary.js`/`corpus_log.js` 가 이미 그 골격
+
+### 서버 재현 절차 (개발기에서 검증된 순서)
+
+```bash
+# 1) uv (sudo 불필요, python3-venv 없어도 됨)
+curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=$HOME/.local/bin:$PATH
+# 2) 헤더 포함 Python (시스템 python3-dev 없으면 triton 컴파일 실패)
+uv python install 3.12
+uv venv ~/vllmenv --python ~/.local/share/uv/python/cpython-3.12-*/bin/python3.12
+# 3) 드라이버에 맞는 vLLM — cu130 은 드라이버 580+ 필요. 구드라이버면 0.9.2(cu126)
+uv pip install --python ~/vllmenv/bin/python 'vllm==0.9.2' 'transformers==4.53.2'
+# 4) 기동 → 별 터미널에서 flood
+~/vllmenv/bin/vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-utilization 0.85
+python flood.py --url http://localhost:8000/v1 --model trillionlabs/Tri-1.8B-Translation --prompt-style tri --mode ramp
+```
+
+기동 실패 시 밟았던 함정 3종(전부 개발기에서 실제로 겪음):
+`torch cu130 vs 구드라이버` → vLLM 0.9.2 로 다운 / `transformers 'aimv2' 충돌`
+→ 4.53.2 핀 / `triton gcc Python.h 없음` → uv 관리 Python 사용.
 
 **트랙 A (seq2seq):**
 - [ ] `madlad3b` 전체 3스테이지 — Apache 2.0 후보의 raw 품질
