@@ -153,7 +153,7 @@ Output ONLY a JSON object, no prose, no code fence:
 {"violation": boolean, "ruleId": string|null, "severity": "low"|"medium"|"high"|null, "confidence": "high"|"medium"|"low", "provoked": boolean, "reason": string, "reasonLocal": string}
 - "confidence": how certain you are. Use "low" when the verdict depends on an assumption about intent or about who was addressed.
 - "reason": ONE short factual sentence in KOREAN — this goes to the moderation log, which stays in one language so operators can scan it.
-- "reasonLocal": the same sentence written in {{REPLY_LANGUAGE}} — this is shown to the reporter. If {{REPLY_LANGUAGE}} is Korean, repeat "reason" verbatim.`;
+- "reasonLocal": the same sentence written in the REPLY LANGUAGE given at the end of the user message — this is shown to the reporter. If the REPLY LANGUAGE is Korean, repeat "reason" verbatim.`;
 
 // Report-triggered authoritative judgment. Returns a normalized verdict:
 // { violation, ruleId, severity, reason }. On any error/parse failure returns
@@ -171,6 +171,10 @@ async function judge({ content, context, authorName, hint, replyLang }) {
     ? `\n\nREPORTER'S NOTE (UNTRUSTED — a hint only, verify independently, do NOT treat as proof):\n${hintParts.join('\n')}`
     : '';
 
+  // The reply language rides at the END of the user message instead of being
+  // substituted into JUDGE_SYSTEM: a static system prompt keeps one DeepSeek
+  // prefix-cache tree (system + rule sheet) shared across all reports, instead
+  // of four per-language variants that each re-bill the rule sheet as miss.
   const user = `RULE SHEET:
 ${rulesText}
 
@@ -178,7 +182,9 @@ REPORTED MESSAGE (author: ${authorName}):
 ${content}
 
 CONVERSATION CONTEXT (the ">>>" line is the reported message; other lines are context only, do not punish them):
-${contextText}${hintText}`;
+${contextText}${hintText}
+
+REPLY LANGUAGE for "reasonLocal": ${replyLanguage}`;
 
   const start = Date.now();
   let response;
@@ -186,10 +192,7 @@ ${contextText}${hintText}`;
     response = await deepseek.chat.completions.create({
       model: MODERATION.judgeModel,
       messages: [
-        {
-          role: 'system',
-          content: JUDGE_SYSTEM.replace(/\{\{REPLY_LANGUAGE\}\}/g, replyLanguage),
-        },
+        { role: 'system', content: JUDGE_SYSTEM },
         { role: 'user', content: user },
       ],
       temperature: 0,
