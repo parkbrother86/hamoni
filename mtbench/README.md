@@ -1,0 +1,111 @@
+# mtbench — 순수 MT 모델 자체 서빙 실험 (핸드오프)
+
+**작성**: 2026-08-14 · **대상 장비**: 로컬 서버 RTX 3060 Ti 8GB
+**레포**: https://github.com/parkbrother86/hamoni (이 폴더는 bench/ 와 달리 **git 추적됨** — 서버에서 clone 하면 그대로 있음)
+**배경/의사결정 맥락**: 개발기의 `bench/PRICING.md` §9 (DeepSeek 8/16 요금 개편 대응 기록 — 로컬 전용 문서)
+
+## 왜 하나
+
+DeepSeek 요금 개편 후에도 API 가 현 트래픽에선 압도적으로 싸지만, ①대화형(캐시
+히트 낮음) 트래픽이 커질 경우 ②인게임 전환 시의 latency/거버넌스 축에서
+**자체 서빙(GPU) 옵션의 실현 가능성**을 미리 검증해 둔다. LLM(vLLM) 경로보다
+**순수 MT 모델을 우선** 실험한다 (사용자 결정 2026-08-14).
+
+## 실험 목표 (게이트)
+
+| # | 질문 | 판정 기준 |
+|---|---|---|
+| G1 | **품질** — 게임/디스코드 채팅을 쓸 만하게 번역하나 | 대표 케이스에서 치명 오역(슬랭 드랍, 의미 반전) 빈도. DeepSeek 참조와 나란히 육안 판정 |
+| G2 | **placeholder** — 마스크가 지시 없이 살아남나 | 마스크 형태별 생존율. **≥ 문장 6/6 형태가 존재해야** 멘션/이모지 왕복 가능 |
+| G3 | **처리량** — "초당 몇백 건" 이 되나 | 배치 스윕 msg/s. 목표 수백/s |
+| G4 | **latency** — 단일 호출이 SLA(p95<1.5s) 안이냐 | p50/p95. DeepSeek 실측 637/950ms 대비 |
+
+종합 판정: G2~G4 통과 + G1 실패 시 → **파인튜닝 트랙**(봇 corpus log 의
+원문→DeepSeek 번역쌍으로 증류) 타당성 검토. G1 이 raw 로도 근접하면 즉시 활용 검토.
+
+## 모델 후보 — 라이선스가 1차 필터
+
+단일 모델 다국어(ko/en/ja/zh 동시) + 8GB VRAM 적합 + 상용 가능 라이선스 순.
+
+| 우선 | `--model` | 라이선스 | 크기(양자화) | 비고 |
+|---|---|---|---|---|
+| **1** | `madlad3b` (MADLAD-400-3B-MT, Google) | **Apache 2.0** ✓ | int8 ~3GB | 400+언어 단일 모델. **상용 가능 후보의 본명** |
+| **2** | `m2m100-1.2b` (Meta) | **MIT** ✓ | int8 ~1.3GB | 100언어. 구세대라 품질 낮을 수 있음 — 라이선스 안전 베이스라인 |
+| 참고 | `nllb600m` / `nllb1.3b` (Meta) | **CC-BY-NC 4.0 — 상용 불가** | ~0.7/1.4GB | **실험 전용** (품질/속도 상한 참고). 프로덕션 배제 |
+| 제외 | SeamlessM4T, Tower | CC-BY-NC | — | 라이선스 |
+| 2안 | Qwen2.5-7B 등 instruct LLM | Apache 2.0 | AWQ ~4.4GB | MT 아님 — vLLM 경로, 개발기 `bench/GPU_TEST.md` 러너북 |
+
+## 서버 설치 (Linux / WSL2 권장, Windows 네이티브도 동작 확인됨)
+
+```bash
+git clone https://github.com/parkbrother86/hamoni.git && cd hamoni/mtbench
+python -m venv venv
+./venv/bin/pip install -r requirements.txt        # Windows: .\venv\Scripts\pip
+```
+
+- GPU: CUDA 12 계열 드라이버면 됨. 런타임 라이브러리(cuBLAS/cuDNN)는
+  requirements 의 `nvidia-*-cu12` pip 휠로 들어가고, 스크립트가 경로를 자동
+  등록한다 (Windows 에서 이 방식으로 검증 완료).
+- CUDA 실패 시 자동 CPU 폴백 — **quality/mask 는 CPU 로도 유효**(품질은 장치
+  무관), speed 만 GPU 필요.
+- 모델은 첫 실행 때 HF 에서 자동 다운로드 (nllb600m ≈ 0.6GB).
+  `madlad3b`/`m2m100` 사전 변환본이 404 면 스크립트가 변환 명령을 안내한다.
+
+## 실행
+
+```bash
+python bench_mt.py --model nllb600m                 # 전체 (quality→mask→speed)
+python bench_mt.py --model madlad3b                 # 1순위 후보
+python bench_mt.py --model m2m100-1.2b --stage mask # 스테이지 지정
+```
+
+## 초기 실측 — 2026-08-14, 개발기 4080 Laptop 12GB
+
+> 4080 Laptop 메모리 대역폭(432GB/s) ≈ 3060 Ti(448GB/s) — **처리량은 3060 Ti
+> 로 거의 1:1 이전**된다. 모델: nllb600m (int8_float16).
+
+**G3/G4 — 속도는 걱정거리가 아님이 증명됨:**
+
+| 배치 | msg/s |
+|---:|---:|
+| 1 | 10.6 |
+| 8 | 58.9 |
+| 32 | 228.5 |
+| **128** | **798.8** |
+
+단일 스트림 latency p50 **107ms** / p95 140ms (DeepSeek 637/950ms 의 1/6).
+CPU(참고): 배치 128 에서 26.5 msg/s — CPU 로도 현 디스코드 트래픽은 감당됨.
+
+**G2 — 마스크 생존율 (kr→en, 6문장, 지시 없음):**
+
+| 마스크 | beam1 | beam4 | 판정 |
+|---|---:|---:|---|
+| `101` (숫자) | **6/6** | **6/6** | ✅ 유일한 신뢰 형태 |
+| `T0` | 5/6 | 6/6 | △ 문장에 따라 드랍 |
+| `[1]` | 3/6 | 4/6 | ✗ |
+| `{a}` | 0/6 | 0/6 | ✗ **전멸** — 브레이스는 복사 안 됨 |
+| `⟪T0⟫` (현 봇 형식) | 0/6 | 0/6 | ✗ 전멸 (LLM 전용 형식임이 실증) |
+| `<x>` | 0/6 | 0/6 | ✗ |
+
+→ MT 경로 채택 시 text.js 마스크를 **숫자형(`101`, `102`...)으로 교체**하면 왕복 가능.
+
+**G1 — 품질 (nllb600m raw): 게임 채팅 불가 판정.**
+슬랭 전멸: `막공 몇 시 출발?`→"What time is it?"(드랍), `낚여버렸네요 ㅋㅋ`→"I'm
+out of fish", `ㄱㄱ`→"A.", `리젠`→"Regen", `먹었어요(획득)`→"ate", `탱`→"タン"/"长者".
+존댓말/fragment 규칙도 예상대로 미이행(주어 발명). 일반 문장은 통과권
+(`탱커 한 명 더 구해요`→"I need another tank.").
+→ **속도·마스크·latency 는 전부 통과, 관문은 품질 하나.** raw 소형 MT 로는
+불가하고, ①MADLAD/M2M 의 raw 품질 확인(아래 TODO) ②안 되면 파인튜닝 트랙.
+
+## 서버에서 할 일 (TODO)
+
+- [ ] `madlad3b` 전체 3스테이지 — **본명 후보(Apache 2.0)의 raw 품질**이 핵심 질문
+- [ ] `m2m100-1.2b` 전체 3스테이지 — MIT 베이스라인
+- [ ] (여유 시) `nllb1.3b` quality — 크기↑가 슬랭을 얼마나 줄이는지 참고 측정
+- [ ] 결과를 이 파일 "실측" 섹션에 추가 (모델·장치·배치별 표)
+- [ ] 판정 회의: raw 채택 가능? / 파인튜닝 트랙(corpus log 증류) 진입? / LLM 2안?
+
+## 파일
+
+- `bench_mt.py` — 3스테이지 하네스 (모델 자동 다운로드, CUDA→CPU 폴백, UTF-8 출력)
+- `requirements.txt`
