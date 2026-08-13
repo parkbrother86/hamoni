@@ -27,13 +27,37 @@ DeepSeek 요금 개편 후에도 API 가 현 트래픽에선 압도적으로 싸
 
 단일 모델 다국어(ko/en/ja/zh 동시) + 8GB VRAM 적합 + 상용 가능 라이선스 순.
 
+### 트랙 A — seq2seq MT (CTranslate2, `bench_mt.py`)
+
 | 우선 | `--model` | 라이선스 | 크기(양자화) | 비고 |
 |---|---|---|---|---|
-| **1** | `madlad3b` (MADLAD-400-3B-MT, Google) | **Apache 2.0** ✓ | int8 ~3GB | 400+언어 단일 모델. **상용 가능 후보의 본명** |
+| **1** | `madlad3b` (MADLAD-400-3B-MT, Google) | **Apache 2.0** ✓ | int8 ~3GB | 400+언어 단일 모델 |
 | **2** | `m2m100-1.2b` (Meta) | **MIT** ✓ | int8 ~1.3GB | 100언어. 구세대라 품질 낮을 수 있음 — 라이선스 안전 베이스라인 |
 | 참고 | `nllb600m` / `nllb1.3b` (Meta) | **CC-BY-NC 4.0 — 상용 불가** | ~0.7/1.4GB | **실험 전용** (품질/속도 상한 참고). 프로덕션 배제 |
 | 제외 | SeamlessM4T, Tower | CC-BY-NC | — | 라이선스 |
-| 2안 | Qwen2.5-7B 등 instruct LLM | Apache 2.0 | AWQ ~4.4GB | MT 아님 — vLLM 경로, 개발기 `bench/GPU_TEST.md` 러너북 |
+
+### 트랙 B — 번역 특화 decoder LLM (OpenAI 호환 서버 + 기존 bench 하네스) ★신규
+
+decoder-only 라 CTranslate2 하네스로는 못 돌린다. **vLLM(Linux) 또는
+llama.cpp server(GGUF, 크로스플랫폼)** 로 OpenAI 호환 엔드포인트를 띄우고,
+`bench/` 의 기존 하네스(`ramp.js`/`burst.js`/`quality.js`)를 `BENCH_BASE_URL`
+로 붙인다. **단건 동시요청 처리량(§단건 동시성) 측정은 이 트랙에서 한다.**
+
+| 우선 | 모델 | 라이선스 | 크기 | 비고 |
+|---|---|---|---|---|
+| **1** | `trillionlabs/Tri-1.8B-Translation` | **Apache 2.0** ✓ | 1.8B (GGUF Q4 ~1.1GB) | **EN↔KO↔JA↔ZH 전방향 — 우리 4개 언어와 정확히 일치.** 21B 에서 증류. 8GB 에 여유. GGUF: `mradermacher/Tri-1.8B-Translation-GGUF` |
+| 2 | `google/translategemma-4b-it` | **Gemma Terms** (상용 가능하나 Prohibited Use Policy + 재배포 조건 — 법무 확인 필요) | ~5B (GGUF Q4 ~3GB) | 55언어, 멀티모달(이미지 내 텍스트 번역). 8GB 에 Q4 로 들어감. GGUF: `mradermacher/translategemma-4b-it-GGUF` |
+
+프롬프트 형식(모델 카드 기준):
+- Tri-1.8B: `Translate the following Korean text into English:\n{text} <en>`
+- TranslateGemma: `source_lang_code`/`target_lang_code` 지정 형식 (카드 참조)
+
+> 트랙 B 는 **V10 시스템 프롬프트를 쓰지 않는다** — 번역 전용 모델이라 지시
+> 채널이 제한적이다. 따라서 `quality.js` 는 그대로 못 쓰고 모델별 프롬프트
+> 어댑터가 필요하다 (client.js 에 분기 추가). 반면 `ramp.js`/`burst.js` 는
+> 프롬프트 내용과 무관하게 부하만 걸면 되므로 그대로 재사용 가능.
+
+| 2안 | Qwen2.5-7B 등 범용 instruct LLM | Apache 2.0 | AWQ ~4.4GB | 트랙 A·B 모두 품질 실패 시 — 개발기 `bench/GPU_TEST.md` 러너북 |
 
 ## 서버 설치 (Linux / WSL2 권장, Windows 네이티브도 동작 확인됨)
 
@@ -111,13 +135,76 @@ out of fish", `ㄱㄱ`→"A.", `리젠`→"Regen", `먹었어요(획득)`→"ate
 → **속도·마스크·latency 는 전부 통과, 관문은 품질 하나.** raw 소형 MT 로는
 불가하고, ①MADLAD/M2M 의 raw 품질 확인(아래 TODO) ②안 되면 파인튜닝 트랙.
 
+## ★ 단건 동시성 — 실제로 알고 싶은 지표 (2026-08-14 사용자 우선순위)
+
+**클라이언트 배치가 아니라, 짧은 번역 요청을 개별로 동시에 쏟아부었을 때
+서버가 얼마나 안정적으로 처리하나.** 실 운영 형태가 이것이다 — 디스코드
+메시지는 제각기 도착하고, fan-out 3 은 동시 3발이지 배치 1개가 아니다.
+
+> ⚠️ 위 §초기 실측의 `798 msg/s @batch128` 은 **클라이언트 배치**(한 호출에
+> 128문장) 수치라 이 질문의 답이 아니다. 상한선일 뿐이고, 단건 동시요청은
+> 요청당 오버헤드(HTTP, 스케줄링, 개별 디코드)가 붙어 반드시 더 낮게 나온다.
+> **두 수치를 같은 표에 섞지 말 것.**
+
+측정 도구는 이미 있다 — `bench/ramp.js` 가 정확히 이 형태다: 초당 N개를
+**개별 요청으로** 발사, 초당 bin 으로 시간에 따른 열화 추적, max in-flight 로
+큐잉 감지, `--auto` 로 한계점(p95>5s 또는 err>10%) 자동 탐색.
+
+```bash
+# 서버에 OpenAI 호환 엔드포인트를 띄운 뒤 (vLLM 또는 llama.cpp server)
+cd hamoni/bench && npm install
+export BENCH_BASE_URL=http://localhost:8000/v1
+export BENCH_MODEL=trillionlabs/Tri-1.8B-Translation
+
+node ramp.js --auto --duration 15      # 한계점 자동 탐색 ← 핵심
+node ramp.js --rps 30 --duration 60    # 특정 RPS 지속 안정성
+node burst.js --concurrency 50         # 순간 동시 폭발
+```
+
+**판정 포인트:**
+- **한계 RPS** — `--auto` 가 멈춘 직전 단계. 이게 "단건 기준 실사용 처리량"
+- **초당 bin 의 기울기** — RPS 고정인데 latency 가 계속 오르면 큐가 쌓이는 중
+  (= 발사율 > 처리율). 평평하면 그 RPS 는 안정
+- **max in-flight** — 고정 RPS 에서 무한정 커지면 이미 과부하
+- **p95** — SLA(1.5s) 를 넘는 지점이 실질 상한
+- 서버 로그의 배치 크기 — vLLM 은 continuous batching 으로 단건들을 자동으로
+  묶는다. 이게 작동해야 단건 처리량이 배치 수치에 근접한다 (안 되면 폭락)
+
+**서버 기동 (Tri-1.8B 기준):**
+
+```bash
+# vLLM (Linux/WSL2) — continuous batching, OpenAI 호환
+pip install vllm
+vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-utilization 0.9
+
+# llama.cpp server (Windows 포함 어디서나) — GGUF
+./llama-server -hf mradermacher/Tri-1.8B-Translation-GGUF -c 1024 -np 16 --host 0.0.0.0
+#   -np 16 = 동시 슬롯 16개. 이 값이 단건 동시성의 상한이 되므로 반드시 올릴 것
+```
+
+`--max-model-len 1024` 로 충분하다 (V10 같은 긴 시스템 프롬프트가 없는 번역
+전용 모델이라 컨텍스트가 짧다) — KV 캐시가 남아 동시 슬롯을 많이 딸 수 있다.
+
 ## 서버에서 할 일 (TODO)
 
-- [ ] `madlad3b` 전체 3스테이지 — **본명 후보(Apache 2.0)의 raw 품질**이 핵심 질문
+**트랙 B (우선 — 단건 동시성이 핵심 질문):**
+- [ ] `Tri-1.8B-Translation` 서버 기동(vLLM 또는 llama.cpp) → `ramp.js --auto`
+      로 **단건 한계 RPS** 확보. 우리 4개 언어 정확 일치 + Apache 2.0 이라 1순위
+- [ ] 같은 모델 품질 — 프롬프트 어댑터 붙여 `quality.js`, 또는 수동 케이스로
+      §초기실측의 18케이스(슬랭/존댓말/마스크) 재현 비교
+- [ ] `translategemma-4b-it` 동일 절차. **Gemma Terms 상용 조건 법무 확인 선행**
+- [ ] 두 모델 단건 RPS/p95/품질 비교표 → 이 파일에 추가
+
+**트랙 A (seq2seq):**
+- [ ] `madlad3b` 전체 3스테이지 — Apache 2.0 후보의 raw 품질
 - [ ] `m2m100-1.2b` 전체 3스테이지 — MIT 베이스라인
-- [ ] (여유 시) `nllb1.3b` quality — 크기↑가 슬랭을 얼마나 줄이는지 참고 측정
-- [ ] 결과를 이 파일 "실측" 섹션에 추가 (모델·장치·배치별 표)
-- [ ] 판정 회의: raw 채택 가능? / 파인튜닝 트랙(corpus log 증류) 진입? / LLM 2안?
+- [ ] (여유 시) `nllb1.3b` quality — 크기↑가 슬랭을 얼마나 줄이는지 참고
+- [ ] `bench_mt.py` 에도 단건 동시성 스테이지가 필요한지 판단 (CT2 는 인프로세스라
+      HTTP 오버헤드가 없어 트랙 B 와 직접 비교 불가 — 서빙 방식을 맞춰야 함)
+
+**공통:**
+- [ ] 결과를 이 파일 "실측" 섹션에 추가 (모델·장치·**측정 형태(배치 vs 단건)** 명시)
+- [ ] 판정 회의: raw 채택 가능? / 파인튜닝 트랙(corpus log 증류) 진입? / 범용 LLM 2안?
 
 ## 파일
 
