@@ -71,7 +71,9 @@ const MODERATION = {
   },
 
   strike: {
-    timeoutStartStrike: 3, // strike count at which timeouts begin (3 -> 1h, 4 -> 2h ...)
+    // Strike count at which timeouts begin. Duration grows with the SQUARE of
+    // the step past it: 1h, 4h, 9h, 16h, 25h, 36h... (see strikes.timeoutHours).
+    timeoutStartStrike: 3,
     // Strikes older than this stop counting toward escalation (history is kept).
     // Without expiry a long-standing member who slipped twice months apart sits
     // permanently one step from a timeout, while a provocateur who never gets a

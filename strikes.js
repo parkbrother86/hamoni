@@ -6,8 +6,11 @@
 //
 // Escalation ladder (see config.MODERATION.strike):
 //   strike 1..(start-1) : delete + public warning, no timeout
-//   strike >= start     : delete + timeout of (count - start + 1) hours
-//   With start = 3: 3 -> 1h, 4 -> 2h, 5 -> 3h, ... (+1h per additional strike).
+//   strike >= start     : delete + timeout of (count - start + 1)^2 hours
+//   With start = 3: 3 -> 1h, 4 -> 4h, 5 -> 9h, 6 -> 16h, 7 -> 25h, ...
+//   Squared rather than linear: +1h per strike was too shallow to register on a
+//   repeat offender, who could rack up violations for weeks before the ladder
+//   reached a duration they noticed.
 
 const fs = require('fs');
 const path = require('path');
@@ -16,6 +19,11 @@ const { MODERATION } = require('./config');
 
 const STRIKES_PATH = path.join(__dirname, 'data', 'strikes.json');
 const MAX_HISTORY = 50; // cap per-user history to keep the file bounded
+// Discord refuses a timeout longer than 28 days, and a refused call applies
+// NOTHING — not a shorter timeout. The squared ladder reaches this at strike 28,
+// so it is clamped here rather than left to fail at the API. Same bound the
+// manual-timeout modal enforces (modactions.js).
+const MAX_TIMEOUT_HOURS = 672; // 28 days
 
 let store = {};
 
@@ -123,7 +131,8 @@ function activeCount(userId) {
 function timeoutHours(count) {
   const start = MODERATION.strike.timeoutStartStrike;
   if (count < start) return 0;
-  return count - start + 1;
+  const step = count - start + 1;
+  return Math.min(step * step, MAX_TIMEOUT_HOURS);
 }
 
 module.exports = {
