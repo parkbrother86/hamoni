@@ -136,6 +136,7 @@ function timeoutHours(count) {
 }
 
 module.exports = {
+  MAX_TIMEOUT_HOURS,
   get,
   add,
   decrement,
