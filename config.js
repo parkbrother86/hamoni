@@ -73,12 +73,17 @@ const MODERATION = {
   strike: {
     // Strike count at which timeouts begin. Duration grows with the SQUARE of
     // the step past it: 1h, 4h, 9h, 16h, 25h, 36h... (see strikes.timeoutHours).
-    timeoutStartStrike: 3,
+    // At 2, one warning is the whole grace period — a second upheld violation
+    // mutes. Deliberate: the warning exists to make the rule known, and someone
+    // who violates again inside the expiry window has already been told.
+    timeoutStartStrike: 2,
     // Strikes older than this stop counting toward escalation (history is kept).
-    // Without expiry a long-standing member who slipped twice months apart sits
-    // permanently one step from a timeout, while a provocateur who never gets a
-    // confirmed violation is unaffected.
-    strikeExpiryDays: 90,
+    // Each strike expires on its own 30th day, so this is a rolling window, not
+    // a periodic reset. Short because the ladder now starts at the second strike:
+    // without a tight window a member would sit one step from a mute almost
+    // permanently. A provocateur who never earns a confirmed violation is
+    // unaffected either way.
+    strikeExpiryDays: 30,
   },
 
   // Graduated rollout. A verdict only auto-enforces when its rule is not
