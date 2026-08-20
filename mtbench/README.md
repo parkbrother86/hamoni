@@ -7,6 +7,11 @@
 > 실패**(glossary+캐시로 흡수 예정). 마스크는 **4~6자리 난수**만 안전.
 > 서버에서 할 일은 §서버에서 할 일, 재현 절차는 §서버 재현 절차.
 >
+> **추가 (2026-08-20)**: 16GB 렌탈을 전제로 **TranslateGemma-12B 도 측정 —
+> G1 불합격으로 종결**. 슬랭은 규모가 아니라 지식 문제임이 확정됐고(§12B 실측),
+> 초성 슬랭에서 **번역 모드를 이탈해 영어 사과문을 뱉는** 새 결함까지 나왔다.
+> 슬랭 참조값도 정정됐다 — `ㄱㄱ`=GoGo, `ㅈㅈ`=GG (DeepSeek 참조가 틀렸다).
+>
 > **수치를 읽기 전에 [CAPACITY.md](CAPACITY.md) 를 먼저 볼 것** — "동시 16"이
 > 유저 수도 배치 크기도 아니라는 것(= 동시 처리 슬롯), 슬롯을 늘리면 오히려
 > 느려지는 이유, 지표 사전, 측정 시 반드시 확인할 것을 정의한다.
@@ -238,16 +243,22 @@ vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-u
 
 ## 트랙 B 실측 — 2026-08-14, 개발기 4080 Laptop 12GB (llama.cpp Q4_K_M)
 
-### 품질 (18케이스, DeepSeek V10 참조 대비)
+### 품질 (18케이스)
 
-| 케이스 | DeepSeek(참조) | **Tri-1.8B** | **TranslateGemma-4B** | NLLB-600M |
+> ⚠️ **참조값 정정 (2026-08-20)**: 이 표는 원래 "DeepSeek V10 참조 대비" 로
+> 채점했으나, **DeepSeek 이 슬랭에서 틀린다**. `ㄱㄱ` 은 **GoGo(고고)** 이고 GG 가
+> 아니다(GG 는 `ㅈㅈ`). 참조가 틀리면 채점이 반전되므로 아래 `ㄱㄱ` 행은
+> 정답을 사람 확정값으로 교체해 재채점했다 — **네 모델 전부 실패**가 된다.
+> 슬랭 정답표는 `bench_mt.py` 의 QUALITY_CASES 상단 주석 참조.
+
+| 케이스 | 참조 정답 | **Tri-1.8B** | **TranslateGemma-4B** | NLLB-600M |
 |---|---|---|---|---|
 | 어제 던전 즐기셨나요 (존댓말) | Did you enjoy the dungeon yesterday? | **동일** ✅ | Did you enjoy playing the dungeon yesterday? ✅ | Did you enjoy the dance last night? ❌ |
 | 한국인 아니신가 | You're not Korean? | Aren't you Korean? ✅ | Are you not Korean? ✅ | You're not Korean. (평서) ❌ |
 | プレイされてましたか? | Were you playing? | **동일** ✅ | — | Have you played it? △ |
 | 待ってます (자기표현) | I'm waiting | **동일** ✅ | I'm waiting. ✅ | I'm waiting for you. △ |
 | 낚여버렸네요 ㅋㅋ | I got tricked lol | I got caught. lol ✅ | I was completely fooled! ㅋㅋㅋ ✅ | I'm out of fish. ❌ |
-| **ㄱㄱ** | GG | See you. ❌ | **GG** ✅ | A. ❌ |
+| **ㄱㄱ** | **go go** (사람 확정) | See you. ❌ | GG ❌ *(구 표기 ✅ — DeepSeek 참조가 틀렸음)* | A. ❌ |
 | anyone up for a raid tonight? | 오늘 밤 레이드 갈 사람 있나요? | 오늘밤 습격할 사람? △ | **오늘 밤 함께 레이드하러 갈 사람 있나요?** ✅ | 오늘 밤 급습을 하고 싶은 사람이 있나요? △ |
 | 보스 누가 탱? → jp | ボス、誰がタンクする？ | ボス、誰がタンク？ ✅ | ボスは誰がサポート…❌ | ボス,誰がタン? △ |
 | **리젠 언제임?** | When's the respawn? | When is the reunion? ❌ | When is the meeting scheduled? ❌ | When is Regen? ❌ |
@@ -257,8 +268,8 @@ vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-u
 
 **판정**: 두 모델 모두 **일반 대화체는 DeepSeek 급**(존댓말→you, 자기표현→I 를
 자연히 이행 — NLLB 가 못 하던 것). 그러나 **게임 슬랭/전문용어는 셋 다 전멸**
-(리젠·막공·먹다·부본·탱). TranslateGemma 가 `ㄱㄱ`→GG, en→kr 자연스러움에서
-앞서고, Tri-1.8B 가 kr→jp 와 간결성에서 앞선다.
+(리젠·막공·먹다·부본·탱·ㄱㄱ). Tri-1.8B 가 kr→jp 와 간결성에서 앞서고,
+TranslateGemma 가 en→kr 자연스러움에서 앞선다.
 → **G1 게이트: raw 로는 불합격. 게임 슬랭 파인튜닝이 전제 조건.**
 
 ### 마스크 생존 (숫자 심화 18케이스)
@@ -458,6 +469,87 @@ GPU 한계가 아니라 **llama-cpp-python 서버가 모델 락으로 요청을 
 → 교훈: **서빙 스택 선택이 모델 선택만큼 중요하다.** GGUF/llama-cpp-python 은
 품질·단일 latency 확인용으로만 쓰고, 처리량 판단은 반드시 vLLM 으로 할 것.
 
+---
+
+## TranslateGemma-12B 실측 — 2026-08-20, 개발기 4080 Laptop 12GB
+
+> **결론: G1 불합격. 12B 는 렌탈해도 후보가 아니다.**
+> 규모를 3배 키워도 핵심 슬랭은 그대로 실패하고, 오히려 **주석 삽입 · 번역 모드
+> 이탈**이라는 새 결함이 추가됐다.
+
+**왜 했나**: 렌탈 상한이 16GB VRAM 이라 12B 가 배포 후보가 될 수 있는지 물음
+(사용자, 2026-08-20). 핵심 질문은 하나 — **슬랭 실패가 규모 문제인가 지식
+문제인가**. 품질은 하드웨어 무관이라 렌탈 없이 로컬에서 판정된다.
+
+구성: Q4_K_M(6.8GiB, 4B 테스트와 동일 양자화라 직접 비교), llama-server
+`-ngl 99 -c 2048 --no-jinja`, `quality_http.py`. **21케이스** (기존 18 + 초성 슬랭 3 신규).
+
+### 게임 슬랭/전문용어 — 관문
+
+| 케이스 | 참조 정답 | **12B** | 4B | Tri-1.8B |
+|---|---|---|---|---|
+| 부본 (`今晚打副本吗?`) | run the dungeon | **run dungeons** ✅ | play a game ❌ | make a copy ❌ |
+| 탱커 한 명 더 | one more tank | **one more tank player** ✅ | — | — |
+| 보스 누가 탱? → jp/cn | タンク / 坦克 | 용어 ✅ / **주석 오염** ⚠️ | サポート ❌ | タンク ✅ |
+| **리젠 언제임?** | respawn | **regeneration** ❌ | meeting ❌ | reunion ❌ |
+| **막공 몇 시 출발?** | pickup raid | **final performance** ❌ | final performance ❌ | curtain go up ❌ |
+| **반지 먹었어요** | got that ring | **ate that ring** ❌ | ate that ring ❌ | ate the ring ❌ |
+
+순수 개선은 **부본·탱커 2개뿐**이다. `막공`→"final performance" 는 4B 와
+**글자 그대로 같은 오역** — 더 큰 모델이 같은 지식 공백을 공유한다는 증거다.
+→ **슬랭은 규모 문제가 아니라 지식 문제**임이 실측으로 확정됐다. glossary 확정.
+
+### ★★ 신규 발견 — 초성 슬랭에서 번역 모드를 이탈한다
+
+신규 추가한 3케이스에서 단순 오역보다 나쁜 것이 나왔다:
+
+| 입력 | 정답 | 12B 출력 | 판정 |
+|---|---|---|---|
+| `ㄱㄱ` | go go | `Okay.` | ❌ 오역 |
+| `ㅈㅈ` | GG | `I'm sorry, but I cannot translate that text. It appears to be a placeholder or an incomplete phrase. Please provide a complete and meaningful sentence...` | ❌❌ **거부/메타 응답** |
+| `ㅊㅊ` | congrats | `Certainly. Please provide the Korean text you would like me to translate. I will do my best...` | ❌❌ **프롬프트 붕괴** (입력 무시) |
+| `ㅊㅋㅊㅋ` | congrats | `Congratulations! Congratulations!` | ✅ 유일 성공 |
+
+**이건 오역보다 심각하다.** 릴레이 봇이면 영어 사과문 한 문단이 그대로 채팅에
+노출된다. 비용도 붙는다 — 긴 문단을 생성하느라 892ms/765ms 로 **평소의 3~4배**,
+p95 가 517ms→765ms 로 밀렸다. 반복형(`ㅊㅋㅊㅋ`)만 맞춘 것으로 보아 **입력이
+짧을수록 번역 모드 유지에 실패**한다. 게임 채팅은 초단문이 지배적이라 직격이다.
+
+### 주석 삽입 — 4B 에서는 없던 회귀
+
+```
+[kr→cn] 보스 누가 탱?  →  谁来当坦克？ (Shéi lái dāng tǎnkě?)     ← 병음 삽입
+[kr→jp] 보스 누가 탱?  →  誰がタンクを担当しますか？（ボス戦について） ← 설명 주석
+```
+
+프롬프트에 "Produce only the translation, without any additional explanations
+or commentary" 가 **명시돼 있는데도** 무시했다. 실시간 릴레이엔 그대로 노출된다.
+
+### 일반 대화체 — 강하나 두 가지 감점
+
+`어제 던전 즐기셨나요`는 참조와 **완전 동일**, `낚여버렸네요 ㅋㅋ`→"I fell for
+it, haha", en↔kr/jp 모두 자연스럽다. 다만:
+
+- **fragment 미유지**: `괜찮음?`→"Are you okay?" (참조 "Okay?"),
+  `보스 잡았어?`→"Did you defeat the boss?" (참조 "Boss down?"). 오역은 아니나
+  채팅 톤이 아니다.
+- **Tri-1.8B 가 맞춘 걸 틀린다**: `プレイされてましたか?`→"Was it being played?"
+  (수동태 오해). Tri 는 참조와 동일했다. **규모가 단조 개선을 주지 않는다.**
+
+### 속도·VRAM
+
+| 지표 | 12B | Tri-1.8B | DeepSeek API |
+|---|---:|---:|---:|
+| p50 | **272ms** | 42ms | 637ms |
+| p95 | 765ms *(메타 응답 포함)* / 517ms *(18케이스)* | — | 950ms |
+| VRAM (ctx 2048, 4슬롯) | **8,869 MiB** | — | — |
+
+**VRAM 은 문제가 아니었다** — 16GB 렌탈이면 KV 에 ~7GB 남아 Q5_K_M/Q6_K 도
+여유다. 그러나 **품질이 렌탈을 정당화하지 못한다**. Tri-1.8B 대비 **6.5배 느리면서**
+슬랭은 같이 실패하고, 주석 삽입과 모드 이탈이란 새 결함까지 있다.
+
+→ **12B 종결.** 후속은 glossary 강제 치환 + 캐시 승격 방향으로만 간다.
+
 ## 서버에서 할 일 (TODO)
 
 **트랙 B — 개발기(4080)에서 품질/마스크/latency/동시성 전부 측정 완료. 남은 것:**
@@ -466,6 +558,11 @@ GPU 한계가 아니라 **llama-cpp-python 서버가 모델 락으로 요청을 
       그 지점을 다시 찾을 것. 절차는 아래 §서버 재현 그대로
 - [ ] `translategemma-4b-it` 동시성 (4B 라 8GB 에서 KV 여유가 더 빠듯). 채택
       검토 시 **Gemma Terms 상용 조건 법무 확인 선행** (원본 HF repo 는 게이트)
+- [x] **`translategemma-12b-it` 품질 (2026-08-20, 개발기 4080)** — 16GB 렌탈
+      후보 검토용. **G1 불합격으로 종결**: 슬랭은 규모로 안 풀리고(막공 오역이
+      4B 와 동일), 초성 슬랭에서 번역 모드 이탈 + 주석 삽입이라는 새 결함까지.
+      Tri-1.8B 대비 6.5배 느림. 상세 = §TranslateGemma-12B 실측.
+      **3060 Ti(8GB)에서는 Q4_K_M 7.3GB 가 KV 자리를 안 남겨 애초에 불가.**
 - [ ] 게임 슬랭 대응 설계 — glossary 강제 치환 + 캐시 승격으로 흡수(사용자
       방향, 2026-08-14). 봇의 `glossary.js`/`corpus_log.js` 가 이미 그 골격
 
@@ -482,6 +579,13 @@ uv pip install --python ~/vllmenv/bin/python 'vllm==0.9.2' 'transformers==4.53.2
 # 4) 기동 → 별 터미널에서 flood
 ~/vllmenv/bin/vllm serve trillionlabs/Tri-1.8B-Translation --max-model-len 1024 --gpu-memory-utilization 0.85
 python flood.py --url http://localhost:8000/v1 --model trillionlabs/Tri-1.8B-Translation --prompt-style tri --mode ramp
+```
+
+품질만 볼 때(또는 §함정 4 로 `llama_cpp` 가 죽을 때)는 공식 바이너리 경로:
+
+```bash
+llama-server -m <gguf> -ngl 99 -c 2048 --no-jinja --host 127.0.0.1 --port 8080
+python quality_http.py --style gemma      # 또는 --style tri
 ```
 
 기동 실패 시 밟았던 함정 3종(전부 개발기에서 실제로 겪음):
@@ -508,6 +612,9 @@ python flood.py --url http://localhost:8000/v1 --model trillionlabs/Tri-1.8B-Tra
   `--api chat|completions`.
 - `quality_llm.py` — 트랙 B 품질/마스크 (GGUF 인프로세스). `bench_mt.py` 와
   **같은 케이스**를 써서 트랙 A 와 직접 비교된다.
+- `quality_http.py` — **트랙 B 품질 (llama-server `/completion` 경유).**
+  `quality_llm.py` 의 인프로세스 경로가 막히는 환경용(§함정 4). 같은
+  `QUALITY_CASES` 를 쓰므로 결과는 그대로 비교 가능. 12B 실측이 이 경로다.
 - `serve_gguf.py` — GGUF 를 OpenAI 호환 서버로 기동 (flood.py 부하 대상)
 - `cuda_path.py` — Windows 에서 pip NVIDIA 런타임 DLL 경로 등록 (공용 헬퍼)
 - `requirements.txt` — 검증된 버전 (Windows py3.13 + CUDA 12 에서 확인)
@@ -524,6 +631,19 @@ python flood.py --url http://localhost:8000/v1 --model trillionlabs/Tri-1.8B-Tra
    평문 문자열을 보내면 ValueError. 범용 클라이언트 연동 시 어댑터 필요.
 3. **Windows CUDA DLL** — `ctranslate2`/`llama_cpp` 는 plain LoadLibrary 라
    `cuda_path` 를 먼저 import 해야 한다. Linux 는 불필요.
+4. **llama-cpp-python PyPI wheel 이 컨텍스트 생성에서 죽을 수 있다** (2026-08-20,
+   개발기 py3.13 + Raptor Lake). `Llama(...)` 가 `llama_init_from_model` 에서
+   `OSError 0xc000001d`(ILLEGAL_INSTRUCTION). **가중치 적재는 통과하고 그래프
+   예약에서 죽는다** — CUDA 문제가 아니다(`n_gpu_layers=0` 에서도 동일).
+   원인: wheel 의 `llama_cpp/lib/` 에 `ggml-cpu.dll` 이 **1개뿐**이라 CPU 런타임
+   디스패치가 없다. 공식 llama.cpp 배포본은 14개 변종(alderlake/haswell/zen4…)을
+   넣고 CPU 에 맞춰 고른다. `--extra-index-url .../cu124` 에는 **py3.13 wheel 이
+   아예 없어** pip 가 PyPI 일반 빌드로 떨어지는 것도 같이 확인됐다.
+   → 우회: 공식 바이너리(`llama-server`) + `quality_http.py`. 버전 룰렛 금지.
+5. **llama-server 는 기동 시 chat template 을 미리 파싱한다.** TranslateGemma
+   템플릿은 평문 content 를 예외로 거부하므로 그대로 띄우면
+   `chat template parsing error` 로 **종료**한다. `--no-jinja` 필수 —
+   어차피 `quality_http.py` 가 프롬프트를 직접 렌더한다.
 
 > 개발기 로컬에는 `bench/`(디스코드 봇용 JS 하네스 + 비용/설계 문서)가 있지만
 > **`.git/info/exclude` 로 추적 제외라 서버 clone 에는 없다.** 서버에서 필요한

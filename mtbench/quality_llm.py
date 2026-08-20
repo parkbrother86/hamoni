@@ -33,6 +33,15 @@ CATALOG = {
         "style": "gemma",
         "license": "Gemma Terms (상용 조건 법무 확인 필요)",
     },
+    # 12B 는 배포 후보가 아니라 품질 상한 레퍼런스다 — "슬랭 실패가 규모 문제인가
+    # 지식 문제인가" 를 가른다. Q4_K_M(~6.8GiB) 은 4B 테스트와 같은 양자화라
+    # 직접 비교가 되고, 렌탈 상한인 16GB VRAM 에도 여유로 들어간다.
+    "gemma12b": {
+        "repo": "mradermacher/translategemma-12b-it-GGUF",
+        "file": "translategemma-12b-it.Q4_K_M.gguf",
+        "style": "gemma",
+        "license": "Gemma Terms (상용 조건 법무 확인 필요)",
+    },
 }
 
 LANG_NAME = {"kr": "Korean", "en": "English", "jp": "Japanese", "cn": "Chinese"}
