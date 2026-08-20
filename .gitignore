@@ -35,3 +35,8 @@ ecosystem.config.local.js
 # Python
 __pycache__/
 *.pyc
+
+# mtbench — 로컬 모델 가중치 / venv (커밋 금지, HF 에서 재다운로드)
+mtbench/models/
+mtbench/venv/
+*.gguf
