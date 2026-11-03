@@ -1,7 +1,5 @@
 # Hamoni
 
-![Hamoni in action](sample.png)
-
 Real-time Discord chat translation relay between Korean / English / Japanese / Chinese channels. LLM-powered, latency-optimized, MMORPG-tuned.
 
 ---
@@ -99,9 +97,10 @@ npm install better-sqlite3
 
 ## 2.4 Configure environment variables
 
-Create `.env`:
+Copy the empty configuration template and fill it locally:
 
 ```bash
+cp .env.example .env
 nano .env
 ```
 
@@ -116,22 +115,26 @@ Get a DeepSeek API key at https://platform.deepseek.com .
 
 ## 2.5 Configure channel IDs
 
-Edit `config.js`:
+Set the IDs from step 1.3 in your local `.env`:
 
-```bash
-nano config.js
+```env
+DISCORD_CHANNEL_KR_ID=YOUR_KR_CHANNEL_ID
+DISCORD_CHANNEL_EN_ID=YOUR_EN_CHANNEL_ID
+DISCORD_CHANNEL_JP_ID=YOUR_JP_CHANNEL_ID
+DISCORD_CHANNEL_CN_ID=YOUR_CN_CHANNEL_ID
+MODLOG_CHANNEL_ID=YOUR_PRIVATE_MODERATOR_CHANNEL_ID
 ```
 
-Replace the IDs in `CHANNELS` with the ones you copied in step 1.3:
+The four relay channels must be set and distinct. Startup stops before Discord
+login if any is missing or duplicated. `MODLOG_CHANNEL_ID` is optional; leave it
+empty to disable moderation log posting. Keep that channel private to moderators.
 
-```js
-const CHANNELS = {
-  kr: 'YOUR_KR_CHANNEL_ID',
-  en: 'YOUR_EN_CHANNEL_ID',
-  jp: 'YOUR_JP_CHANNEL_ID',
-  cn: 'YOUR_CN_CHANNEL_ID',
-};
-```
+Existing installations that used IDs in `config.js` must copy those IDs into
+these environment variables before updating. The repository has no default
+channel IDs.
+
+Keep `.env` and its backups, `data/`, SQLite files, logs, and screenshots of real
+conversations out of Git. Only the empty `.env.example` belongs in the repository.
 
 ## 2.6 Run with pm2
 
@@ -189,6 +192,12 @@ npm install     # dependencies may have changed
 pm2 restart hamoni
 pm2 logs hamoni --lines 50
 ```
+
+## Offline checks
+
+After installing dependencies, run `node --test test/public-sync.test.js`.
+These checks use local fixtures and mocked service calls; they do not log into
+Discord, call the translation provider, or read production data.
 
 ---
 

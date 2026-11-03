@@ -193,8 +193,13 @@ async function handleInteraction(interaction) {
         console.error('Report submit failed', err?.message || err);
         await safeErrorReply(interaction, '신고 처리 중 오류가 발생했습니다.');
       }
-    // Operator enforcement modal (review item / report-load alert).
-    } else if (id.startsWith('rvm|') || id.startsWith('rlm|')) {
+    // Operator enforcement modal (review item / report-load alert /
+    // prescreen flag).
+    } else if (
+      id.startsWith('rvm|') ||
+      id.startsWith('rlm|') ||
+      id.startsWith('psm|')
+    ) {
       try {
         await handleEnforceModal(interaction);
       } catch (err) {
@@ -215,8 +220,13 @@ async function handleInteraction(interaction) {
         console.error('Mod action failed', err?.message || err);
         await safeErrorReply(interaction, '작업 처리 중 오류가 발생했습니다.');
       }
-    // Enforcement buttons on review items / report-load alerts.
-    } else if (id.startsWith('rv|') || id.startsWith('rl|')) {
+    // Enforcement buttons on review items, report-load alerts and prescreen
+    // flags — same handler, the prefix only decides which card it came from.
+    } else if (
+      id.startsWith('rv|') ||
+      id.startsWith('rl|') ||
+      id.startsWith('ps|')
+    ) {
       try {
         await handleEnforceButton(interaction);
       } catch (err) {
