@@ -17,6 +17,7 @@ const rules = require('./rules');
 const enforce = require('./enforce');
 const reportload = require('./reportload');
 const moderation = require('./moderation');
+const modlog = require('./modlog');
 
 // Alerts already acted on, so a second operator clicking a stale card cannot
 // double-punish. In-memory: a restart re-opens them, which is the safe default.
@@ -142,6 +143,7 @@ async function closeCard(interaction, resultLine) {
 
 // rv|<action>|<userId>[|<channelId>|<messageId>]   review item
 // rl|<action>|<userId>                              report-load alert
+// ps|<action>|<userId>[|<channelId>|<messageId>]   prescreen flag
 async function handleEnforceButton(interaction) {
   if (!isMod(interaction)) return deny(interaction);
 
@@ -177,11 +179,78 @@ async function handleEnforceButton(interaction) {
   }
 
   if (action === 'ignore') {
-    reportload.ignore(userId);
+    // A prescreen card is one flagged message, not an accumulation alert.
+    // Dismissing it must not also mute that user's report-load alerts for the
+    // next 30 days — different subsystem, different meaning.
+    const isPrescreen = prefix === 'ps';
+    if (!isPrescreen) reportload.ignore(userId);
     await closeCard(interaction, '무시 처리');
     await interaction.reply({
-      content: '✖️ 무시 처리됨 — 일정 기간 재알림되지 않습니다.',
+      content: isPrescreen
+        ? '✖️ 무시 처리됨 — 이 감지 건만 닫았습니다.'
+        : '✖️ 무시 처리됨 — 일정 기간 재알림되지 않습니다.',
       flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  // 정밀 판정 — promote a context-free prescreen flag into a real verdict by
+  // running the reasoner over the same message with the full conversation
+  // window, then replacing this card with the review card that carries it.
+  if (action === 'judge') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    let message = null;
+    try {
+      const ch = await interaction.client.channels.fetch(channelId);
+      message = await ch.messages.fetch(messageId);
+    } catch {
+      message = null;
+    }
+    if (!message) {
+      await interaction.editReply({
+        content: '원본 메시지를 찾을 수 없습니다 (이미 삭제되었을 수 있습니다).',
+      });
+      return;
+    }
+
+    const { text: context } = await moderation.gatherContext(message.channel, message);
+    const verdict = await moderation.judge({
+      content: message.content || '',
+      context,
+      authorName: message.member?.displayName || message.author?.username,
+      replyLang: 'kr',
+    });
+    if (verdict.error) {
+      await interaction.editReply({ content: '판정에 실패했습니다. 다시 눌러 주세요.' });
+      return;
+    }
+
+    await closeCard(
+      interaction,
+      verdict.violation
+        ? `정밀 판정 → 위반 (${verdict.ruleId}, 확신도 ${verdict.confidence})`
+        : '정밀 판정 → 위반 아님'
+    );
+    // Nothing is enforced here: a violation lands in the review queue with the
+    // usual buttons, so the decision stays a human one.
+    await modlog.postVerdict(interaction.client, {
+      reporterTag: `프리스크린 · ${interaction.user.tag} 요청`,
+      reporterReason: '프리스크린 감지 건 정밀 판정',
+      offenderTag: message.author?.tag,
+      offenderId: userId,
+      channelName: message.channel?.name,
+      content: message.content || '',
+      verdict,
+      action: '자동조치 없음 (운영자 판단 대기)',
+      review: verdict.violation,
+      sourceChannelId: message.channel?.id,
+      sourceMessageId: message.id,
+    });
+    await interaction.editReply({
+      content: verdict.violation
+        ? `🔬 위반 판정 · ${verdict.ruleId} · 확신도 ${verdict.confidence}\n집행 버튼이 달린 카드를 새로 올렸습니다.`
+        : `🔬 위반 아님 — ${verdict.reason || '사유 없음'}`,
     });
     return;
   }

@@ -52,6 +52,11 @@ function firePrescreen(message, rendered) {
         channelName: message.channel?.name,
         ruleId: result.ruleId,
         content: rendered,
+        // Without these the card is unactionable: no message to delete, no
+        // link to read it in situ, and no target for a second-pass judgment.
+        guildId: message.guildId,
+        channelId: message.channel?.id,
+        messageId: message.id,
       });
     })
     .catch(() => {});

@@ -169,7 +169,17 @@ async function postVerdict(client, {
 }
 
 // A passive pre-screen flag (no action taken — for human review).
-async function postPrescreenFlag(client, { authorTag, authorId, channelName, ruleId, content }) {
+async function postPrescreenFlag(client, {
+  authorTag,
+  authorId,
+  channelName,
+  ruleId,
+  content,
+  guildId,
+  channelId,
+  messageId,
+}) {
+  const hasRef = Boolean(channelId && messageId);
   const embed = new EmbedBuilder()
     .setTitle('👁️ 프리스크린 감지 (자동조치 없음)')
     .setColor(0xf39c12)
@@ -180,7 +190,36 @@ async function postPrescreenFlag(client, { authorTag, authorId, channelName, rul
       { name: '메시지', value: (content || '—').slice(0, 1024) },
     )
     .setTimestamp();
-  await send(client, embed);
+  if (guildId && hasRef) {
+    embed.addFields({
+      name: '원문',
+      value: `https://discord.com/channels/${guildId}/${channelId}/${messageId}`,
+    });
+  }
+
+  // The prescreen is a flash model reading ONE line: no conversation context,
+  // no stated reason, no confidence. That is too thin to hang a strike on, so
+  // the card leads with 정밀 판정 — the reasoner re-reads the same message with
+  // the full context window and replaces this flag with a real verdict. The
+  // rest are the same operator actions the review queue already carries.
+  const components = [];
+  if (authorId && hasRef) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ps|judge|${authorId}|${channelId}|${messageId}`)
+          .setLabel('정밀 판정')
+          .setEmoji('🔬')
+          .setStyle(ButtonStyle.Primary)
+      )
+    );
+  }
+  if (authorId) {
+    components.push(
+      ...enforcementButtons('ps', authorId, hasRef ? { channelId, messageId } : undefined)
+    );
+  }
+  await send(client, embed, components);
 }
 
 module.exports = {

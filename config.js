@@ -1,16 +1,28 @@
 const CHANNELS = {
-  kr: '1469534211252682853',
-  en: '1507806267522154669',
-  jp: '1507806237096677376',
-  cn: '1507807121159491604',
+  kr: (process.env.DISCORD_CHANNEL_KR_ID || '').trim(),
+  en: (process.env.DISCORD_CHANNEL_EN_ID || '').trim(),
+  jp: (process.env.DISCORD_CHANNEL_JP_ID || '').trim(),
+  cn: (process.env.DISCORD_CHANNEL_CN_ID || '').trim(),
 };
 
 const LANG_BY_CHANNEL_ID = Object.fromEntries(
-  Object.entries(CHANNELS).map(([lang, channelId]) => [
-    channelId,
-    lang,
-  ])
+  Object.entries(CHANNELS)
+    .filter(([, channelId]) => channelId)
+    .map(([lang, channelId]) => [channelId, lang])
 );
+
+// Check before login so a missing setting cannot quietly disable the relay.
+function validateChannels() {
+  const missing = Object.entries(CHANNELS)
+    .filter(([, id]) => !id)
+    .map(([lang]) => `DISCORD_CHANNEL_${lang.toUpperCase()}_ID`);
+  if (missing.length) {
+    throw new Error(`Set required channel IDs in .env: ${missing.join(', ')}`);
+  }
+  if (new Set(Object.values(CHANNELS)).size !== Object.keys(CHANNELS).length) {
+    throw new Error('Translation channel IDs must be distinct for each language.');
+  }
+}
 
 const LANG_LABEL = {
   kr: 'Korean',
@@ -46,7 +58,7 @@ const MAX_MESSAGE_LENGTH = 300;
 const MODERATION = {
   // Private admin-only channel for verdict audit logs + prescreen flags.
   // Empty string disables mod-log posting (feature degrades gracefully).
-  modLogChannelId: process.env.MODLOG_CHANNEL_ID || '1469540952598253669',
+  modLogChannelId: (process.env.MODLOG_CHANNEL_ID || '').trim(),
 
   // Report-triggered judge: reasoning model, off the hot path.
   judgeModel: 'deepseek-v4-pro',
@@ -122,8 +134,17 @@ const MODERATION = {
   // Blame-free cooldown on heated two-person exchanges. Assigns no fault, so it
   // needs no value judgment about who provoked whom — it just removes the tempo
   // that makes baiting pay.
+  //
+  // OFF. The detector has no heat signal in it at all — it counts tempo and
+  // turn-taking and nothing else — so the thresholds below describe an ordinary
+  // lively conversation: two people trading four messages each inside two
+  // minutes with one reply between them. It fired on friendly chat and cut the
+  // flow, while the notice asserted a 과열 it had never measured. Raising the
+  // thresholds only makes that rarer, not correct, which is why this is off
+  // rather than retuned. Re-enable only alongside a signal that actually reads
+  // content: a prescreen flag or a strike on one of the pair inside the window.
   cooldown: {
-    enabled: true,
+    enabled: false,
     windowSec: 120,
     minExchanges: 8, // combined messages from the pair inside the window
     minEach: 3, // each of the two must be this active (rules out a monologue)
@@ -188,6 +209,7 @@ const TIMEOUT_TEMPLATES = {
 
 module.exports = {
   CHANNELS,
+  validateChannels,
   LANG_BY_CHANNEL_ID,
   LANG_LABEL,
   LANG_NATIVE,

@@ -1,12 +1,14 @@
 require('dotenv').config();
 
+const { CHANNELS, validateChannels } = require('./config');
+validateChannels();
+
 const {
   Client,
   GatewayIntentBits,
   Partials,
 } = require('discord.js');
 
-const { CHANNELS } = require('./config');
 const {
   handleMessage,
   handleMessageUpdate,
