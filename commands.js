@@ -1,3 +1,4 @@
+const { handleDraftInteraction } = require('./drafts');
 const {
   SlashCommandBuilder,
   ContextMenuCommandBuilder,
@@ -206,6 +207,18 @@ async function handleInteraction(interaction) {
         console.error('Enforce modal failed', err?.message || err);
         await safeErrorReply(interaction, '집행 처리 중 오류가 발생했습니다.');
       }
+    }
+    return;
+  }
+
+  // Staff post drafts: target menu and preview buttons.
+  if (interaction.customId?.startsWith('draft|') &&
+      (interaction.isButton?.() || interaction.isStringSelectMenu?.())) {
+    try {
+      await handleDraftInteraction(interaction);
+    } catch (err) {
+      console.error('Draft action failed', err?.message || err);
+      await safeErrorReply(interaction, '초안 처리 중 오류가 발생했습니다.');
     }
     return;
   }

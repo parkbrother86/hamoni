@@ -440,6 +440,7 @@ async function handleReportSubmit(interaction) {
         userId: authorId,
         userTag: offenderTag,
         summary: reportload.summarize(authorId),
+        sourceChannelId,
       });
     }
 

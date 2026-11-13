@@ -57,7 +57,7 @@ test('startup rejects missing channels before constructing external clients', ()
 test('prescreen buttons and modals reach the permission-gated action handlers', async () => {
   const seen = [];
   const commands = load('commands.js', {
-    './stats': {}, './metrics': {}, './report': {},
+    './stats': {}, './metrics': {}, './report': {}, './drafts': {},
     './modactions': {
       handleEnforceButton: async (i) => seen.push(`button:${i.customId}`),
       handleEnforceModal: async (i) => seen.push(`modal:${i.customId}`),
@@ -92,7 +92,11 @@ function logHarness(channelId = 'private-mod-channel') {
       allowedMentions: payload.allowedMentions,
     }) };
   } } };
-  const log = load('modlog.js', { './config': { MODERATION: { modLogChannelId: channelId } } });
+  const log = load('modlog.js', {
+    './config': { MODERATION: { modLogChannelId: channelId } },
+    './forums': { logChannels: () => ({}), langOfChannel: async () => null },
+    './cardstore': { set() {}, get: () => null },
+  });
   return { sent, client, log };
 }
 
@@ -141,7 +145,8 @@ function actionHarness({ allowed = true, missing = false, verdict = { violation:
       },
       judge: async (input) => { events.judged.push(input); return verdict; },
     },
-    './modlog': { postVerdict: async (client, data) => events.verdicts.push(data) },
+    './modlog': { postVerdict: async (client, data) => events.verdicts.push(data), closeTwin: async () => null },
+    './forums': { langOfLogChannel: () => null, cmRole: () => null },
   });
   const interaction = {
     customId: 'ps|judge|user|channel|message',

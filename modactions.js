@@ -18,13 +18,20 @@ const enforce = require('./enforce');
 const reportload = require('./reportload');
 const moderation = require('./moderation');
 const modlog = require('./modlog');
+const forums = require('./forums');
 
 // Alerts already acted on, so a second operator clicking a stale card cannot
 // double-punish. In-memory: a restart re-opens them, which is the safe default.
 const handledAlerts = new Set();
 
+// Moderators (Moderate Members) may act anywhere. A community manager may act
+// only on cards in the log channel of their own language (로그-kr/en/jp/cn);
+// enforcement itself runs with the bot's permissions.
 function isMod(interaction) {
-  return interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers);
+  if (interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers)) return true;
+  const lang = forums.langOfLogChannel(interaction.channelId);
+  const role = lang ? forums.cmRole(lang) : null;
+  return Boolean(role && interaction.member?.roles?.cache?.has(role));
 }
 
 async function deny(interaction) {
@@ -130,12 +137,16 @@ async function closeCard(interaction, resultLine) {
     const msg = interaction.message;
     if (!msg) return;
     handledAlerts.add(msg.id);
+    const line = `${resultLine} · by ${interaction.user.tag}`;
     const embed = EmbedBuilder.from(msg.embeds[0] || {});
     embed.addFields({
       name: '✅ 처리됨',
-      value: `${resultLine} · by ${interaction.user.tag}`,
+      value: line,
     });
     await msg.edit({ embeds: [embed], components: [] });
+    // The same event has a twin card in the other log; close it too.
+    const twin = await modlog.closeTwin(interaction.client, msg.id, line);
+    if (twin) handledAlerts.add(twin);
   } catch (err) {
     console.error('modactions: card close failed —', err?.message || err);
   }

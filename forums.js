@@ -31,12 +31,20 @@ const FORUM_BY_ID = new Map(); // forumId -> { group, lang, kind }
 // A staff post in one is translated (quality model) into the other three.
 let STAFF = {};
 const STAFF_BY_ID = new Map(); // channelId -> { group, lang }
+// Moderation log layout: "logs": { "all": "<unified log>", "kr": "...", ... }
+// and community manager roles: "cmRoles": { "kr": "<roleId>", ... }.
+let LOGS = {};
+let CM_ROLES = {};
+let STAFF_CFG = {}; // "staff": { "draft": "<draft channel id>" }
 
 function loadConfig() {
   GROUPS = {};
   FORUM_BY_ID.clear();
   STAFF = {};
   STAFF_BY_ID.clear();
+  LOGS = {};
+  CM_ROLES = {};
+  STAFF_CFG = {};
   if (!fs.existsSync(CONFIG_PATH)) {
     console.log('forums: data/forums.json not found — forum translation off');
     return;
@@ -63,6 +71,9 @@ function loadConfig() {
     }
     STAFF[group] = chans;
   }
+  LOGS = { ...(raw.logs || {}) };
+  CM_ROLES = { ...(raw.cmRoles || {}) };
+  STAFF_CFG = { ...(raw.staff || {}) };
   console.log(`forums: ${Object.keys(GROUPS).length} forum groups, ${Object.keys(STAFF).length} staff channel groups loaded`);
 }
 loadConfig();
@@ -106,6 +117,45 @@ function staffChannel(channelId) {
   };
 }
 
+// Language of any relayed channel id (chat, staff channel, grouped forum or
+// a thread inside one). Needs the client only for threads.
+async function langOfChannel(client, channelId) {
+  if (!channelId) return null;
+  const { LANG_BY_CHANNEL_ID } = require('./config');
+  if (LANG_BY_CHANNEL_ID[channelId]) return LANG_BY_CHANNEL_ID[channelId];
+  const st = STAFF_BY_ID.get(channelId);
+  if (st) return st.lang;
+  const f = FORUM_BY_ID.get(channelId);
+  if (f) return f.lang;
+  try {
+    const ch = await client.channels.fetch(channelId);
+    if (ch?.isThread?.()) return FORUM_BY_ID.get(ch.parentId)?.lang || null;
+  } catch {}
+  return null;
+}
+
+function logChannels() {
+  return LOGS;
+}
+
+// Language whose community managers may act on cards in this channel.
+function langOfLogChannel(channelId) {
+  return LANGS.find((l) => LOGS[l] === channelId) || null;
+}
+
+function cmRole(lang) {
+  return CM_ROLES[lang] || null;
+}
+
+function staffConfig() {
+  return STAFF_CFG;
+}
+
+// The four channel ids of a staff channel group (announce, roadmap, rules).
+function staffChannelIds(group) {
+  return STAFF[group] || null;
+}
+
 // Thread group row for any of its four thread ids, or null.
 function findThreadGroup(threadId) {
   return stmtFind.get({ id: threadId }) || null;
@@ -137,6 +187,12 @@ module.exports = {
   GROUPS: () => GROUPS,
   forumInfo,
   staffChannel,
+  langOfChannel,
+  logChannels,
+  langOfLogChannel,
+  cmRole,
+  staffConfig,
+  staffChannelIds,
   findThreadGroup,
   saveThreadGroup,
   deleteThreadGroup,

@@ -17,6 +17,8 @@ const counters = {
   mitigated: 0,
   cooldowns: 0,
   campaigns: 0,
+  retries: 0,
+  retrySuccess: 0,
 };
 
 const startedAt = Date.now();

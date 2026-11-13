@@ -155,19 +155,8 @@ function outputBudget(text, quality) {
   return quality ? Math.min(32000, base + 8000) : Math.min(8000, base);
 }
 
-async function translateText(text, sourceLang, targetLang, context, opts = {}) {
-  const quality = !!opts.quality;
-  const cached = cache.get(text, sourceLang, targetLang);
-  if (cached !== null) {
-    stats.increment('cacheHits');
-    metrics.record({
-      src: sourceLang,
-      tgt: targetLang,
-      hit: 1,
-    });
-    return cached;
-  }
-  stats.increment('cacheMisses');
+// One API call. Throws on failure; err.retryable marks failures worth retrying.
+async function callOnce(text, sourceLang, targetLang, context, quality) {
 
   const start = Date.now();
   let response;
@@ -228,12 +217,68 @@ async function translateText(text, sourceLang, targetLang, context, opts = {}) {
   }
 
   const sourceLines = text.split('\n').length;
+  const content = response?.choices?.[0]?.message?.content;
+  if (!content) throw Object.assign(new Error('empty response'), { retryable: true });
   const result = normalizeTranslatedText(
-    response.choices[0].message.content,
+    content,
     { maxLines: Math.max(3, sourceLines + 2), keepBlank: sourceLines > 1 }
   );
-  cache.set(text, sourceLang, targetLang, result);
+  if (!result) throw Object.assign(new Error('empty translation'), { retryable: true });
   return result;
+}
+
+
+// Retry policy (2026-11-13, user: retry what the bot failed to translate — the
+// cost is low). A retryable failure (rate limit, server error, network error,
+// empty answer) is retried until it succeeds, alternating between the fast and
+// the reasoning model so one busy model does not block the line. It stops when
+// the error is not retryable (bad request, auth) or when opts.shouldStop()
+// reports that the source is gone (deleted). The wait between tries grows and
+// is capped; it is pacing, not a give-up condition.
+function isRetryable(err) {
+  if (err?.retryable) return true;
+  const status = err?.status;
+  if (status === undefined || status === null) return true; // network / timeout
+  return status === 429 || status >= 500;
+}
+
+async function translateText(text, sourceLang, targetLang, context, opts = {}) {
+  const quality = !!opts.quality;
+  // opts.noCache: a staff "translate again" must reach the model.
+  const cached = opts.noCache ? null : cache.get(text, sourceLang, targetLang);
+  if (cached !== null) {
+    stats.increment('cacheHits');
+    metrics.record({
+      src: sourceLang,
+      tgt: targetLang,
+      hit: 1,
+    });
+    return cached;
+  }
+  stats.increment('cacheMisses');
+
+  let wait = 2000;
+  for (let attempt = 0; ; attempt++) {
+    const useQuality = attempt % 2 === 0 ? quality : !quality;
+    try {
+      const result = await callOnce(text, sourceLang, targetLang, context, useQuality);
+      cache.set(text, sourceLang, targetLang, result);
+      if (attempt > 0) {
+        stats.increment('retrySuccess');
+        console.log(`translator: ${sourceLang} -> ${targetLang} succeeded on retry ${attempt}`);
+      }
+      return result;
+    } catch (err) {
+      if (!isRetryable(err)) throw err;
+      if (opts.shouldStop?.()) throw Object.assign(new Error('source gone, retry stopped'), { cause: err });
+      stats.increment('retries');
+      console.error(
+        `translator: ${sourceLang} -> ${targetLang} failed (${err?.status || err?.message}), retry ${attempt + 1}`
+      );
+      await new Promise((r) => setTimeout(r, wait));
+      wait = Math.min(wait * 2, 60000);
+    }
+  }
 }
 
 module.exports = {

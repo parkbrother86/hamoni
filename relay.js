@@ -261,7 +261,7 @@ async function buildTranslatedBody({
     sourceLang,
     targetLang,
     { contextText, targetSpeaker },
-    { quality }
+    { quality, shouldStop: () => wasDeleted(message.channelId, message.id) }
   );
   return postprocessTranslation(translated, tokens, targetLang);
 }

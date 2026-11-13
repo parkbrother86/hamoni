@@ -1,0 +1,16 @@
+{
+  "_comment": "Copy to data/forums.json and fill in real IDs. data/ is not committed.",
+  "groups": {
+    "suggestions": { "kind": "user",  "kr": "", "en": "", "jp": "", "cn": "" },
+    "devnotes":    { "kind": "notes", "kr": "", "en": "", "jp": "", "cn": "" },
+    "technotes":   { "kind": "notes", "kr": "", "en": "", "jp": "", "cn": "" }
+  },
+  "channels": {
+    "announce": { "kr": "", "en": "", "jp": "", "cn": "" },
+    "roadmap":  { "kr": "", "en": "", "jp": "", "cn": "" },
+    "rules":    { "kr": "", "en": "", "jp": "", "cn": "" }
+  },
+  "logs":    { "all": "", "kr": "", "en": "", "jp": "", "cn": "" },
+  "cmRoles": { "kr": "", "en": "", "jp": "", "cn": "" },
+  "staff":   { "draft": "" }
+}
