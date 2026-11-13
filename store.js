@@ -72,6 +72,8 @@ function recordRelay({
   webhookMessageId,
   snippet,
   authorId,
+  targetLang,
+  part = 0,
 }) {
   const k = key(sourceChannelId, sourceMessageId);
   let entry = store.get(k);
@@ -84,6 +86,8 @@ function recordRelay({
     targetChannelId,
     webhookMessageId,
     snippet,
+    targetLang,
+    part,
   });
   reverse.set(webhookMessageId, {
     sourceChannelId,

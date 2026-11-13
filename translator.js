@@ -146,7 +146,17 @@ MESSAGE (from ${speaker}):
 ${text}`;
 }
 
-async function translateText(text, sourceLang, targetLang, context) {
+// opts.quality: staff posts (forum notes) use the reasoning model. The chat
+// path keeps the fast model with thinking off.
+// Output budget grows with the input so long messages are not cut off; the old
+// fixed 200-token cap only fitted the old 300-character limit.
+function outputBudget(text, quality) {
+  const base = Math.max(200, Math.ceil(text.length * 3));
+  return quality ? Math.min(32000, base + 8000) : Math.min(8000, base);
+}
+
+async function translateText(text, sourceLang, targetLang, context, opts = {}) {
+  const quality = !!opts.quality;
   const cached = cache.get(text, sourceLang, targetLang);
   if (cached !== null) {
     stats.increment('cacheHits');
@@ -164,7 +174,7 @@ async function translateText(text, sourceLang, targetLang, context) {
   let errored = false;
   try {
     response = await deepseek.chat.completions.create({
-      model: 'deepseek-v4-flash',
+      model: quality ? 'deepseek-v4-pro' : 'deepseek-v4-flash',
 
       messages: [
         {
@@ -177,12 +187,16 @@ async function translateText(text, sourceLang, targetLang, context) {
         },
       ],
 
-      temperature: 0,
-      max_tokens: 200,
+      max_tokens: outputBudget(text, quality),
 
-      thinking: {
-        type: 'disabled',
-      },
+      ...(quality
+        ? {}
+        : {
+            temperature: 0,
+            thinking: {
+              type: 'disabled',
+            },
+          }),
     });
   } catch (err) {
     stats.increment('errors');
@@ -213,8 +227,10 @@ async function translateText(text, sourceLang, targetLang, context) {
     });
   }
 
+  const sourceLines = text.split('\n').length;
   const result = normalizeTranslatedText(
-    response.choices[0].message.content
+    response.choices[0].message.content,
+    { maxLines: Math.max(3, sourceLines + 2), keepBlank: sourceLines > 1 }
   );
   cache.set(text, sourceLang, targetLang, result);
   return result;

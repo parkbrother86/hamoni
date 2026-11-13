@@ -14,6 +14,8 @@ const {
   handleMessageUpdate,
   handleMessageDelete,
   handleMessageDeleteBulk,
+  handleThreadUpdate,
+  handleThreadDelete,
 } = require('./relay');
 const {
   registerCommands,
@@ -54,6 +56,8 @@ client.on('messageCreate', handleLogMessage);
 client.on('messageUpdate', handleMessageUpdate);
 client.on('messageDelete', handleMessageDelete);
 client.on('messageDeleteBulk', handleMessageDeleteBulk);
+client.on('threadUpdate', handleThreadUpdate);
+client.on('threadDelete', handleThreadDelete);
 client.on('interactionCreate', handleInteraction);
 
 client.login(process.env.DISCORD_TOKEN);

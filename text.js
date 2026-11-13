@@ -8,13 +8,19 @@ function sanitizeDiscordText(text) {
     .trim();
 }
 
-function normalizeTranslatedText(text) {
-  return sanitizeDiscordText(text)
+// maxLines guards against a model that rambles past the translation. Chat
+// lines keep the old 3-line cap; multi-line posts get the source line count
+// plus a margin and keep their paragraph breaks (keepBlank).
+function normalizeTranslatedText(text, { maxLines = 3, keepBlank = false } = {}) {
+  let lines = sanitizeDiscordText(text)
     .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .join('\n');
+    .map((line) => line.replace(/\s+$/, ''));
+  if (keepBlank) {
+    lines = lines.filter((line, i) => line.trim() || (i > 0 && lines[i - 1].trim()));
+  } else {
+    lines = lines.map((line) => line.trim()).filter(Boolean);
+  }
+  return lines.slice(0, maxLines).join('\n').trim();
 }
 
 const EMOJI_ONLY_RE =

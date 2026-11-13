@@ -52,7 +52,11 @@ const SOURCE_LANG_FLAG = {
   cn: 'ZH',
 };
 
-const MAX_MESSAGE_LENGTH = 300;
+// Longest message the relay translates. Was 300; raised on 2026-11-13 (user:
+// loosen the limit) to Discord's own ceiling for a single message (4000 with
+// Nitro). Translations longer than one Discord message (2000) are sent in parts.
+const MAX_MESSAGE_LENGTH = 4000;
+const DISCORD_MESSAGE_LIMIT = 2000;
 
 // Moderation / reporting subsystem.
 const MODERATION = {
@@ -216,6 +220,7 @@ module.exports = {
   LANG_RULE,
   SOURCE_LANG_FLAG,
   MAX_MESSAGE_LENGTH,
+  DISCORD_MESSAGE_LIMIT,
   MODERATION,
   WARN_TEMPLATES,
   TIMEOUT_TEMPLATES,
