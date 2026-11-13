@@ -26,10 +26,17 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 let GROUPS = {};
 const FORUM_BY_ID = new Map(); // forumId -> { group, lang, kind }
+// Staff text channels in four languages (announcements, roadmap, rules):
+// "channels": { "announce": { "kr": "...", "en": "...", "jp": "...", "cn": "..." } }
+// A staff post in one is translated (quality model) into the other three.
+let STAFF = {};
+const STAFF_BY_ID = new Map(); // channelId -> { group, lang }
 
 function loadConfig() {
   GROUPS = {};
   FORUM_BY_ID.clear();
+  STAFF = {};
+  STAFF_BY_ID.clear();
   if (!fs.existsSync(CONFIG_PATH)) {
     console.log('forums: data/forums.json not found — forum translation off');
     return;
@@ -46,7 +53,17 @@ function loadConfig() {
     }
     GROUPS[group] = { kind, forums };
   }
-  console.log(`forums: ${Object.keys(GROUPS).length} groups loaded`);
+  for (const [group, g] of Object.entries(raw.channels || {})) {
+    const chans = {};
+    for (const lang of LANGS) {
+      const id = String(g[lang] || '').trim();
+      if (!id) throw new Error(`forums.json: channel group ${group} is missing ${lang}`);
+      chans[lang] = id;
+      STAFF_BY_ID.set(id, { group, lang });
+    }
+    STAFF[group] = chans;
+  }
+  console.log(`forums: ${Object.keys(GROUPS).length} forum groups, ${Object.keys(STAFF).length} staff channel groups loaded`);
 }
 loadConfig();
 
@@ -76,6 +93,17 @@ const stmtDelete = db.prepare('DELETE FROM thread_groups WHERE id = ?');
 // Forum info for a forum channel id, or null.
 function forumInfo(forumId) {
   return FORUM_BY_ID.get(forumId) || null;
+}
+
+// Staff channel route for a channel id: { group, lang, targets: [{lang, id}] } or null.
+function staffChannel(channelId) {
+  const info = STAFF_BY_ID.get(channelId);
+  if (!info) return null;
+  const chans = STAFF[info.group];
+  return {
+    ...info,
+    targets: LANGS.filter((l) => l !== info.lang).map((lang) => ({ lang, id: chans[lang] })),
+  };
 }
 
 // Thread group row for any of its four thread ids, or null.
@@ -108,6 +136,7 @@ module.exports = {
   LANGS,
   GROUPS: () => GROUPS,
   forumInfo,
+  staffChannel,
   findThreadGroup,
   saveThreadGroup,
   deleteThreadGroup,

@@ -161,6 +161,10 @@ function resolveRoute(message) {
       .map(([lang, id]) => ({ lang, id }));
     return { mode: 'chat', sourceLang: chatLang, targets };
   }
+  const staff = forums.staffChannel(channel.id);
+  if (staff) {
+    return { mode: 'staff', sourceLang: staff.lang, targets: staff.targets };
+  }
   if (!channel.isThread?.()) return null;
   const finfo = forums.forumInfo(channel.parentId);
   if (!finfo) return null;
@@ -348,6 +352,7 @@ async function relayToTarget({
   contextText,
   targetSpeaker,
   quality,
+  staff, // staff channel: post under the author's plain name, no back-link
   newPost, // { forumId, title, appliedTags } when creating a mirrored post
 }) {
   const translated = await buildTranslatedBody({
@@ -366,7 +371,7 @@ async function relayToTarget({
     translated,
     message,
     targetChannelId,
-    jumpLink,
+    jumpLink: staff ? null : jumpLink,
     hasContent,
   });
 
@@ -383,8 +388,9 @@ async function relayToTarget({
   }
 
   const sourceFlag = SOURCE_LANG_FLAG[sourceLang] || '🌐';
-  const webhookName =
-    `[${sourceFlag}] ${displayName}`.slice(0, 80);
+  const webhookName = staff
+    ? displayName.slice(0, 80)
+    : `[${sourceFlag}] ${displayName}`.slice(0, 80);
 
   const { sent, threadId } = await sendRelay({
     webhook: sink.webhook,
@@ -480,7 +486,8 @@ async function handleMessage(message) {
       const attachmentUrls = getAttachmentUrls(message);
       const jumpLink = buildJumpLink(message);
       // Staff notes posts use the quality model; comments and chat do not.
-      const quality = mode === 'newpost' && route.finfo?.kind === 'notes';
+      const quality =
+        mode === 'staff' || (mode === 'newpost' && route.finfo?.kind === 'notes');
 
       console.log(
         `[${sourceLang}${mode === 'chat' ? '' : ` ${mode}`}] ${displayName}: ${rendered || '(attachment)'}`
@@ -535,6 +542,7 @@ async function handleMessage(message) {
               contextText,
               targetSpeaker,
               quality,
+              staff: mode === 'staff',
               newPost: newPostFor(targetLang),
             })
               .then((res) => {
@@ -577,7 +585,7 @@ async function handleMessage(message) {
       }
 
       // Passive moderation pre-screen — non-blocking, flag-only.
-      if (hasContent) {
+      if (hasContent && mode !== 'staff') {
         firePrescreen(message, rendered);
       }
 
@@ -642,15 +650,18 @@ async function handleMessageUpdate(oldMessage, newMessage) {
     const sourceLang =
       route?.sourceLang || LANG_BY_CHANNEL_ID[newMessage.channelId];
     if (!sourceLang) return;
+    const isStaff = route?.mode === 'staff';
     const quality =
-      newMessage.id === newMessage.channelId && route?.finfo?.kind === 'notes';
+      isStaff ||
+      (newMessage.id === newMessage.channelId && route?.finfo?.kind === 'notes');
 
     const rendered = renderMentions(newMessage.content, newMessage);
     const isLong = rendered.length > MAX_MESSAGE_LENGTH;
-    const jumpLink = buildJumpLink(newMessage);
+    const jumpLink = isStaff ? null : buildJumpLink(newMessage);
     const { displayName, avatarURL } = getDisplayInfo(newMessage);
-    const webhookName =
-      `[${SOURCE_LANG_FLAG[sourceLang] || '🌐'}] ${displayName}`.slice(0, 80);
+    const webhookName = isStaff
+      ? displayName.slice(0, 80)
+      : `[${SOURCE_LANG_FLAG[sourceLang] || '🌐'}] ${displayName}`.slice(0, 80);
 
     // Group the relay parts by target.
     const byTarget = new Map();
